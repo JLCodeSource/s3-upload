@@ -97,17 +97,20 @@ def process_file(file):
 
 
 def walk(path):
+    file_list = []
     for root, dirs, files in os.walk(path):
         for name in files:
-            print(os.path.join(root, name))
+            file_list.append(os.path.join(root, name))
         # for name in dirs:
         #    print(os.path.join(root, name))
-
+    return file_list
 
 # for b in s3.buckets.all():
 #    print(b)
 
+
 pwd = os.getcwd()
 path = os.path.join(pwd, 'tmp')
 create_dir_structure(path, 3, 2, 5)
-walk(path)
+files = walk(path)
+print(files)
