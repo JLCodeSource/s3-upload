@@ -66,7 +66,7 @@ def upload(resource, bucket, file, sha256):
 
 def download(resource, bucket, file):
     resource.Object(bucket, file).download_file(
-        f'./tmp/{file}')
+        f'{file}')
 
 
 def delete(resource, bucket, file):
@@ -87,7 +87,6 @@ def hash(file):
 
 def process_file(file):
     sha256 = hash(file)
-    # sha256_hex = sha256.hexdigest()
     print(sha256)
     print(file)
 
@@ -101,16 +100,13 @@ def walk(path):
     for root, dirs, files in os.walk(path):
         for name in files:
             file_list.append(os.path.join(root, name))
-        # for name in dirs:
-        #    print(os.path.join(root, name))
     return file_list
-
-# for b in s3.buckets.all():
-#    print(b)
 
 
 pwd = os.getcwd()
 path = os.path.join(pwd, 'tmp')
 create_dir_structure(path, 3, 2, 5)
 files = walk(path)
-print(files)
+
+for file in files:
+    process_file(file)
