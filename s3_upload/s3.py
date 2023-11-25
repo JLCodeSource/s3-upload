@@ -7,9 +7,9 @@ import sys
 from mypy_boto3_s3 import S3ServiceResource
 
 BUF_SIZE = 65536
-s3: S3ServiceResource = boto3.resource('s3')
+resource: S3ServiceResource = boto3.resource('s3')
 bucket_name = 'gb-upload'
-bucket = s3.Bucket(name=bucket_name)
+bucket = resource.Bucket(name=bucket_name)
 
 
 def upload(resource, bucket, file, sha256):
@@ -30,7 +30,7 @@ def upload(resource, bucket, file, sha256):
 
 
 def getObjSha(resource: S3ServiceResource, bucket: str, file: str):
-    response = s3.meta.client.head_object(
+    response = resource.meta.client.head_object(
         Bucket=bucket,
         Key=file,
         ChecksumMode='ENABLED'
@@ -75,8 +75,8 @@ def process_file(file, folder):
     print(sha256)
     print(file)
 
-    upload(s3, bucket_name, file, sha256)
-    download(s3, bucket_name, folder, file)
+    upload(resource, bucket_name, file, sha256)
+    download(resource, bucket_name, folder, file)
     # delete(s3, bucket_name, file)
 
 

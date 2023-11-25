@@ -4,10 +4,10 @@ import os
 import random
 import boto3
 from pathlib import Path
-from s3_upload import upload
+from s3_upload import s3
 
 
-s3 = boto3.resource('s3')
+resource = boto3.resource('s3')
 bucket_name = 'gb-upload'
 
 
@@ -61,7 +61,7 @@ def test_main():
     create_dir_structure(source, 3, 2, 5)
 
     # Test
-    upload.main(source, tmp)
+    s3.main(source, tmp)
 
     # Verify
     assert True
@@ -79,17 +79,17 @@ def test_upload():
     target = os.path.join(pwd, 'tmp')
     Path(target).mkdir(exist_ok=True)
     create_dir_structure(source, 1, 1, 1)
-    files = upload.walk(source)
+    files = s3.walk(source)
     filename = os.path.basename(files[0])
     cmpfile = os.path.join(target, filename)
-    sha256 = upload.hash(files[0])
+    sha256 = s3.hash(files[0])
 
     # Test
-    upload.upload(s3, bucket_name, files[0], sha256)
+    s3.upload(resource, bucket_name, files[0], sha256)
 
     # Verify
-    response = upload.download(s3, bucket_name, target, files[0])
-    cmpsha = upload.hash(cmpfile)
+    response = s3.download(resource, bucket_name, target, files[0])
+    cmpsha = s3.hash(cmpfile)
 
     assert (response.get("ResponseMetadata").get("HTTPStatusCode") == 200)
     assert (response.get("ChecksumSHA256") == sha256)
@@ -106,12 +106,12 @@ def test_get_object_sha256():
     source = os.path.join(pwd, 'source')
     Path(source).mkdir(exist_ok=True)
     create_dir_structure(source, 1, 1, 1)
-    files = upload.walk(source)
-    sha256 = upload.hash(files[0])
-    upload.upload(s3, bucket_name, files[0], sha256)
+    files = s3.walk(source)
+    sha256 = s3.hash(files[0])
+    s3.upload(resource, bucket_name, files[0], sha256)
 
     # Test
-    headObj = upload.getObjSha(s3, bucket_name, files[0])
+    headObj = s3.getObjSha(resource, bucket_name, files[0])
 
     assert (headObj.get("ChecksumSHA256") == sha256)
 
