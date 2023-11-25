@@ -9,10 +9,13 @@ from mypy_boto3_s3 import S3ServiceResource
 BUF_SIZE = 65536
 resource: S3ServiceResource = boto3.resource('s3')
 bucket_name = 'gb-upload'
-bucket = resource.Bucket(name=bucket_name)
 
 
-def upload(resource, bucket, file, sha256):
+def upload(
+        resource: S3ServiceResource,
+        bucket: str,
+        file: str,
+        sha256: str) -> None:
     with open(file, 'rb') as f:
         if sha256 == '':
             resource.meta.client.put_object(
@@ -54,12 +57,12 @@ def download(resource: S3ServiceResource, bucket: str, folder: str, file: str):
     return response
 
 
-def delete(resource, bucket, file):
+def delete(resource: S3ServiceResource, bucket: str, file: str) -> None:
     resource.Object(bucket, file).delete()
     os.remove(file)
 
 
-def hash(file):
+def hash(file: str) -> str:
     sha256 = hashlib.sha256()
     with open(file, 'rb') as f:
         while True:
@@ -70,7 +73,7 @@ def hash(file):
     return base64.b64encode(sha256.digest()).decode()
 
 
-def process_file(file, folder):
+def process_file(file: str, folder: str) -> None:
     sha256 = hash(file)
     print(sha256)
     print(file)
@@ -80,7 +83,7 @@ def process_file(file, folder):
     # delete(s3, bucket_name, file)
 
 
-def walk(path):
+def walk(path: str):
     file_list = []
     for root, dirs, files in os.walk(path):
         for name in files:
@@ -88,7 +91,7 @@ def walk(path):
     return file_list
 
 
-def main(source, target):
+def main(source: str, target: str) -> None:
     if len(sys.argv) <= 2:
         print("Provide source path")
         sys.exit()
