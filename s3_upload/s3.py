@@ -6,6 +6,7 @@ import base64
 import sys
 
 from mypy_boto3_s3 import S3ServiceResource
+from botocore import exceptions
 
 BUF_SIZE = 65536
 resource: S3ServiceResource = boto3.resource('s3')
@@ -27,11 +28,14 @@ def upload(
 
 
 def get_object_sha256(resource: S3ServiceResource, bucket: str, file: str):
-    response = resource.meta.client.head_object(
-        Bucket=bucket,
-        Key=file,
-        ChecksumMode='ENABLED'
-    )
+    try:
+        response = resource.meta.client.head_object(
+            Bucket=bucket,
+            Key=file,
+            ChecksumMode='ENABLED'
+        )
+    except exceptions.ClientError:
+        return
     return response
 
 

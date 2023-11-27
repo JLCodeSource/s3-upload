@@ -13,6 +13,11 @@ from s3_upload import s3
 resource = boto3.resource('s3')
 bucket_name = 'gb-upload'
 
+# Test settings
+pwd: str = os.getcwd()
+source: str = os.path.join(pwd, 'source')
+tmp: str = os.path.join(pwd, 'tmp')
+
 
 def create_temp_file(size, file_name):
     random_file_name = file_name + "-" + str(uuid.uuid4().hex[:6])
@@ -70,10 +75,7 @@ def clean_up_dir(dir):
 
 def test_main():
     # Setup
-    pwd = os.getcwd()
-    source = os.path.join(pwd, 'source')
     Path(source).mkdir(exist_ok=True)
-    tmp = os.path.join(pwd, 'tmp')
     Path(tmp).mkdir(exist_ok=True)
     create_dir_structure(source, 3, 2, 2)
 
@@ -93,24 +95,21 @@ def test_main():
 
 def test_upload():
     # Setup
-    pwd = os.getcwd()
-    source = os.path.join(pwd, 'source')
     Path(source).mkdir(exist_ok=True)
-    target = os.path.join(pwd, 'tmp')
-    Path(target).mkdir(exist_ok=True)
+    Path(tmp).mkdir(exist_ok=True)
     create_dir_structure(source, 1, 1, 1)
     files = s3.get_local_files(source)
 
     for file in files.keys():
         filename = os.path.basename(file)
-        cmpfile = os.path.join(target, filename)
+        cmpfile = os.path.join(tmp, filename)
         sha256 = s3.hash(file)
 
         # Test
         s3.upload(resource, bucket_name, file, sha256)
 
         # Verify
-        response = s3.download(resource, bucket_name, target, file)
+        response = s3.download(resource, bucket_name, tmp, file)
         cmpsha = s3.hash(cmpfile)
 
         assert (response.get("ResponseMetadata").get("HTTPStatusCode") == 200)
@@ -120,32 +119,41 @@ def test_upload():
     # Cleanup
     os.chdir(pwd)
     clean_up_dir(source)
-    clean_up_dir(target)
+    clean_up_dir(tmp)
     clean_up_s3(resource, bucket_name, "/")
 
 
-def test_get_object_sha256():
-    # Setup
-    pwd: str = os.getcwd()
-    source: str = os.path.join(pwd, 'source')
-    Path(source).mkdir(exist_ok=True)
-    create_dir_structure(source, 1, 1, 1)
-    files: dict[str, str] = s3.get_local_files(source)
+class TestGetObjectSha:
 
-    for file in files:
-        sha256 = s3.hash(file)
-        s3.upload(resource, bucket_name, file, sha256)
+    def test_get_object_sha256(self):
+        # Setup
+        Path(source).mkdir(exist_ok=True)
+        create_dir_structure(source, 1, 1, 1)
 
+        files: dict[str, str] = s3.get_local_files(source)
+
+        for file in files:
+            sha256 = s3.hash(file)
+            s3.upload(resource, bucket_name, file, sha256)
+
+            # Test
+            head_object = s3.get_object_sha256(resource, bucket_name, file)
+
+            # Verify
+            assert (head_object is not None)
+            assert (head_object.get("ChecksumSHA256") == sha256)
+
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source)
+        clean_up_s3(resource, bucket_name, "/")
+
+    def test_get_object_sha256_no_file(self):
         # Test
-        head_object = s3.get_object_sha256(resource, bucket_name, file)
-
+        head_object = s3.get_object_sha256(
+            resource, bucket_name, "not_a_file")
         # Verify
-        assert (head_object.get("ChecksumSHA256") == sha256)
-
-    # Cleanup
-    os.chdir(pwd)
-    clean_up_dir(source)
-    clean_up_s3(resource, bucket_name, "/")
+        assert (head_object is None)
 
 
 def test_get_local_files():
