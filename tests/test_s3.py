@@ -74,7 +74,7 @@ def test_main():
     Path(source).mkdir(exist_ok=True)
     tmp = os.path.join(pwd, 'tmp')
     Path(tmp).mkdir(exist_ok=True)
-    create_dir_structure(source, 3, 2, 5)
+    create_dir_structure(source, 3, 2, 2)
 
     # Test
     s3.main(source, tmp)
@@ -160,6 +160,32 @@ def test_get_local_files():
     for root, dirs, files in os.walk(source):
         for name in files:
             want_files[os.path.join(root, name)] = ""
+
+    # Verify
+    for file in got_files:
+        assert (got_files[file] == want_files[file])
+
+    # Cleanup
+    os.chdir(pwd)
+    clean_up_dir(source)
+
+
+def test_set_hash():
+    # Setup
+    pwd = os.getcwd()
+    source = os.path.join(pwd, 'source')
+    Path(source).mkdir(exist_ok=True)
+    create_dir_structure(source, 2, 3, 2)
+
+    # Test
+    got_files: dict[str, str] = s3.get_local_files(source)
+    s3.set_hash(got_files)
+
+    want_files: dict[str, str] = {}
+    for root, dirs, files in os.walk(source):
+        for name in files:
+            file = os.path.join(root, name)
+            want_files[file] = s3.hash(file)
 
     # Verify
     for file in got_files:

@@ -68,22 +68,18 @@ def hash(file: str) -> str:
     return base64.b64encode(sha256.digest()).decode()
 
 
-def process_file(file: str, folder: str) -> None:
-    sha256 = hash(file)
-    print(sha256)
-    print(file)
-
-    upload(resource, bucket_name, file, sha256)
-    download(resource, bucket_name, folder, file)
-    # delete(s3, bucket_name, file)
-
-
 def get_local_files(path: str) -> dict[str, str]:
     file_out: dict[str, str] = {}
     for root, dirs, files in os.walk(path):
         for name in files:
             file_out[os.path.join(root, name)] = ""
     return file_out
+
+
+def set_hash(files) -> None:
+    for file in files:
+        sha256: str = hash(file)
+        files[file] = sha256
 
 
 def main(source: str, target: str) -> None:
@@ -97,8 +93,11 @@ def main(source: str, target: str) -> None:
 
     files: dict[str, str] = get_local_files(source)
 
-    for file in files:
-        process_file(file, target)
+    set_hash(files)
+
+    for file, sha in files.items():
+        upload(resource, bucket_name, file, sha)
+        download(resource, bucket_name, target, file)
 
 
 main("", "")
