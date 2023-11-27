@@ -18,19 +18,12 @@ def upload(
         file: str,
         sha256: str) -> None:
     with open(file, 'rb') as f:
-        if sha256 == '':
-            resource.meta.client.put_object(
-                Bucket=bucket,
-                Body=f,
-                Key=file,
-                ChecksumAlgorithm='SHA256')
-        else:
-            resource.meta.client.put_object(
-                Bucket=bucket,
-                Body=f,
-                Key=file,
-                ChecksumAlgorithm='SHA256',
-                ChecksumSHA256=sha256)
+        resource.meta.client.put_object(
+            Bucket=bucket,
+            Body=f,
+            Key=file,
+            ChecksumAlgorithm='SHA256',
+            ChecksumSHA256=sha256)
 
 
 def get_object_sha256(resource: S3ServiceResource, bucket: str, file: str):
