@@ -1,46 +1,45 @@
 import asyncio
 import json
-import boto3
 import os
 import hashlib
 import base64
 import sys
 
-from mypy_boto3_s3 import S3ServiceResource
+from aiobotocore.session import (  # type: ignore
+    get_session, AioSession, AioBaseClient)
 from botocore import exceptions
 
 BUF_SIZE = 65536
-resource: S3ServiceResource = boto3.resource('s3')
 bucket_name = 'gb-upload'
 
 
 async def upload(
-        resource: S3ServiceResource,
+        client: AioBaseClient,
         bucket: str,
         file: str,
         sha256: str) -> None:
     try:
-        response = await get_object_sha256(resource, bucket, file)
+        response = await get_object_sha256(client, bucket, file)
         if response.get("ChecksumSHA256") == sha256:
             raise FileExistsError
     except exceptions.ClientError:
         with open(file, 'rb') as f:
-            resource.meta.client.put_object(
+            await client.put_object(
                 Bucket=bucket,
                 Body=f,
                 Key=file,
                 ChecksumAlgorithm='SHA256',
-                ChecksumSHA256=sha256)
+                ChecksumSHA256=sha256)  # type: ignore
 
 
 async def get_object_sha256(
-        resource: S3ServiceResource, bucket: str, file: str):
+        client: AioBaseClient, bucket: str, file: str):
     try:
-        response = resource.meta.client.head_object(
+        response = await client.head_object(
             Bucket=bucket,
             Key=file,
             ChecksumMode='ENABLED'
-        )
+        )  # type: ignore
     except exceptions.ClientError:
         raise
     return response
@@ -94,8 +93,10 @@ async def main(source: str, target: str) -> None:
 
     await set_hash(files)
 
-    for file, sha256 in files.items():
-        await upload(resource, bucket_name, file, sha256)
+    session: AioSession = get_session()
+    async with session.create_client('s3') as client:
+        for file, sha256 in files.items():
+            await upload(client, bucket_name, file, sha256)
 
     save_status(files, "status.json")
 

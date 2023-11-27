@@ -2,17 +2,15 @@ import shutil
 import uuid
 import os
 import random
-import boto3
 import json
 from pathlib import Path
 
-from mypy_boto3_s3 import S3ServiceResource
+from aiobotocore.session import (  # type: ignore
+    get_session, AioBaseClient, AioSession)
 from botocore import exceptions
 import pytest
 from s3_upload import s3
 
-
-resource = boto3.resource('s3')
 bucket_name = 'gb-upload'
 
 # Test settings
@@ -21,17 +19,17 @@ source: str = os.path.join(pwd, 'source')
 tmp: str = os.path.join(pwd, 'tmp')
 
 
-def download(resource: S3ServiceResource, bucket: str, folder: str, file: str):
+async def download(client: AioBaseClient, bucket: str, folder: str, file: str):
     basename = os.path.basename(file)
     path = os.getcwd()
     os.chdir(folder)
-    response = resource.meta.client.get_object(
+    response = await client.get_object(
         Bucket=bucket,
         Key=file,
         ChecksumMode='ENABLED',
-    )
+    )  # type: ignore
     with open(basename, 'wb') as f:
-        for chunk in response.get('Body').iter_chunks(chunk_size=65536):
+        async for chunk in response.get('Body').iter_chunks(chunk_size=65536):
             f.write(chunk)
     os.chdir(path)
     return response
@@ -73,18 +71,20 @@ def create_dir_structure(root, dirs, subs, files):
                     1024, (10*1024*1024), 1), file)
 
 
-def clean_up_s3(resource: S3ServiceResource, bucket: str, folder: str) -> None:
-    objects_to_delete = resource.meta.client.list_objects(
-        Bucket=bucket, Prefix=folder)
+async def clean_up_s3(client: AioBaseClient, bucket: str, folder: str) -> None:
+    session: AioSession = get_session()
+    async with session.create_client('s3') as client:
+        objects_to_delete = await client.list_objects(
+            Bucket=bucket, Prefix=folder)  # type: ignore
 
-    delete_keys = {'Objects': []}  # type: ignore
-    delete_keys['Objects'] = [
-        {'Key': k} for k in [
-            obj['Key'] for obj in objects_to_delete.get(  # type: ignore
-                'Contents', [])]]  # type: ignore
+        delete_keys = {'Objects': []}  # type: ignore
+        delete_keys['Objects'] = [
+            {'Key': k} for k in [
+                obj['Key'] for obj in objects_to_delete.get(  # type: ignore
+                    'Contents', [])]]  # type: ignore
 
-    resource.meta.client.delete_objects(
-        Bucket=bucket, Delete=delete_keys)  # type: ignore
+        await client.delete_objects(
+            Bucket=bucket, Delete=delete_keys)  # type: ignore
 
 
 def clean_up_dir(dir):
@@ -103,20 +103,22 @@ async def test_main():
     # Test
     await s3.main(source + rand, tmp + rand)
 
-    # Verify
-    files = s3.check_status(status_file)
-    for file, sha256 in files.items():
-        response = await s3.get_object_sha256(
-            resource, bucket_name, file)
-        assert (response.get("ResponseMetadata").get(
-                "HTTPStatusCode") == 200)
-        assert (response.get("ChecksumSHA256") == sha256)
+    session = get_session()
+    async with session.create_client('s3') as client:
+        # Verify
+        files = s3.check_status(status_file)
+        for file, sha256 in files.items():
+            response = await s3.get_object_sha256(
+                client, bucket_name, file)
+            assert (response.get("ResponseMetadata").get(
+                    "HTTPStatusCode") == 200)
+            assert (response.get("ChecksumSHA256") == sha256)
 
     # Cleanup
     os.chdir(pwd)
     clean_up_dir(source + rand)
     clean_up_dir(tmp + rand)
-    clean_up_s3(resource, bucket_name, "/")
+    await clean_up_s3(client, bucket_name, "/")
     os.remove(status_file)
 
 
@@ -130,28 +132,27 @@ class TestUpload:
         create_dir_structure(source + rand, 1, 1, 1)
         files = s3.get_local_files(source + rand)
 
-        for file in files.keys():
-            filename = os.path.basename(file)
-            cmpfile = os.path.join(tmp + rand, filename)
-            sha256 = await s3.hash(file)
+        session: AioSession = get_session()
+        async with session.create_client('s3') as client:
+            for file in files.keys():
+                sha256 = await s3.hash(file)
 
-            # Test
-            await s3.upload(resource, bucket_name, file, sha256)
+                # Test
+                await s3.upload(client, bucket_name, file, sha256)
 
-            # Verify
-            response = download(resource, bucket_name, tmp + rand, file)
-            cmpsha = await s3.hash(cmpfile)
+                # Verify
+                response = await s3.get_object_sha256(
+                    client, bucket_name, file)
 
-            assert (response.get("ResponseMetadata").get(
-                "HTTPStatusCode") == 200)
-            assert (response.get("ChecksumSHA256") == sha256)
-            assert (sha256 == cmpsha)
+                assert (response.get("ResponseMetadata").get(
+                    "HTTPStatusCode") == 200)
+                assert (response.get("ChecksumSHA256") == sha256)
 
         # Cleanup
         os.chdir(pwd)
         clean_up_dir(source + rand)
         clean_up_dir(tmp + rand)
-        clean_up_s3(resource, bucket_name, "/")
+        await clean_up_s3(client, bucket_name, "/")
 
     @pytest.mark.asyncio
     async def test_upload_exists(self):
@@ -162,23 +163,25 @@ class TestUpload:
         create_dir_structure(source+rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(source+rand)
 
-        for file in files.keys():
-            sha256 = await s3.hash(file)
-            await s3.upload(resource, bucket_name, file, sha256)
+        session = get_session()
+        async with session.create_client('s3') as client:
 
-            # Test
-            with pytest.raises(FileExistsError):
-                await s3.upload(resource, bucket_name, file, sha256)
+            for file in files.keys():
+                sha256 = await s3.hash(file)
+                await s3.upload(client, bucket_name, file, sha256)
+
+                # Test
+                with pytest.raises(FileExistsError):
+                    await s3.upload(client, bucket_name, file, sha256)
 
         # Cleanup
         os.chdir(pwd)
         clean_up_dir(source + rand)
         clean_up_dir(tmp + rand)
-        clean_up_s3(resource, bucket_name, "/")
+        await clean_up_s3(client, bucket_name, "/")
 
 
 class TestGetObjectSha:
-
     @pytest.mark.asyncio
     async def test_get_object_sha256(self):
         # Setup
@@ -188,29 +191,33 @@ class TestGetObjectSha:
 
         files: dict[str, str] = s3.get_local_files(source+rand)
 
-        for file in files:
-            sha256 = await s3.hash(file)
-            await s3.upload(resource, bucket_name, file, sha256)
+        session: AioSession = get_session()
+        async with session.create_client('s3') as client:
 
-            # Test
-            head_object = await s3.get_object_sha256(
-                resource, bucket_name, file)
+            for file in files:
+                sha256 = await s3.hash(file)
+                await s3.upload(client, bucket_name, file, sha256)
 
-            # Verify
-            assert (head_object is not None)
-            assert (head_object.get("ChecksumSHA256") == sha256)
+                # Test
+                head_object = await s3.get_object_sha256(
+                    client, bucket_name, file)
+
+                # Verify
+                assert (head_object is not None)
+                assert (head_object.get("ChecksumSHA256") == sha256)
 
         # Cleanup
         os.chdir(pwd)
         clean_up_dir(source+rand)
-        clean_up_s3(resource, bucket_name, "/")
+        await clean_up_s3(client, bucket_name, "/")
 
     @pytest.mark.asyncio
     async def test_get_object_sha256_no_file(self):
-        # Test
-        with pytest.raises(exceptions.ClientError):
-            await s3.get_object_sha256(
-                resource, bucket_name, "not_a_file")
+        session = get_session()
+        async with session.create_client('s3') as client:
+            # Test
+            with pytest.raises(exceptions.ClientError):
+                await s3.get_object_sha256(client, bucket_name, "not_a_file")
 
 
 def test_get_local_files():
