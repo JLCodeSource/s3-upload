@@ -98,20 +98,22 @@ def test_upload():
     Path(target).mkdir(exist_ok=True)
     create_dir_structure(source, 1, 1, 1)
     files = s3.get_local_files(source)
-    filename = os.path.basename(files[0])
-    cmpfile = os.path.join(target, filename)
-    sha256 = s3.hash(files[0])
 
-    # Test
-    s3.upload(resource, bucket_name, files[0], sha256)
+    for file in files.keys():
+        filename = os.path.basename(file)
+        cmpfile = os.path.join(target, filename)
+        sha256 = s3.hash(file)
 
-    # Verify
-    response = s3.download(resource, bucket_name, target, files[0])
-    cmpsha = s3.hash(cmpfile)
+        # Test
+        s3.upload(resource, bucket_name, file, sha256)
 
-    assert (response.get("ResponseMetadata").get("HTTPStatusCode") == 200)
-    assert (response.get("ChecksumSHA256") == sha256)
-    assert (sha256 == cmpsha)
+        # Verify
+        response = s3.download(resource, bucket_name, target, file)
+        cmpsha = s3.hash(cmpfile)
+
+        assert (response.get("ResponseMetadata").get("HTTPStatusCode") == 200)
+        assert (response.get("ChecksumSHA256") == sha256)
+        assert (sha256 == cmpsha)
 
     # Cleanup
     os.chdir(pwd)
@@ -122,19 +124,21 @@ def test_upload():
 
 def test_get_object_sha256():
     # Setup
-    pwd = os.getcwd()
-    source = os.path.join(pwd, 'source')
+    pwd: str = os.getcwd()
+    source: str = os.path.join(pwd, 'source')
     Path(source).mkdir(exist_ok=True)
     create_dir_structure(source, 1, 1, 1)
-    files = s3.get_local_files(source)
-    sha256 = s3.hash(files[0])
-    s3.upload(resource, bucket_name, files[0], sha256)
+    files: dict[str, str] = s3.get_local_files(source)
 
-    # Test
-    headObj = s3.getObjectSha(resource, bucket_name, files[0])
+    for file in files:
+        sha256 = s3.hash(file)
+        s3.upload(resource, bucket_name, file, sha256)
 
-    # Verify
-    assert (headObj.get("ChecksumSHA256") == sha256)
+        # Test
+        headObj = s3.getObjectSha(resource, bucket_name, file)
+
+        # Verify
+        assert (headObj.get("ChecksumSHA256") == sha256)
 
     # Cleanup
     os.chdir(pwd)
