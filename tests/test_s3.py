@@ -21,6 +21,22 @@ source: str = os.path.join(pwd, 'source')
 tmp: str = os.path.join(pwd, 'tmp')
 
 
+def download(resource: S3ServiceResource, bucket: str, folder: str, file: str):
+    basename = os.path.basename(file)
+    path = os.getcwd()
+    os.chdir(folder)
+    response = resource.meta.client.get_object(
+        Bucket=bucket,
+        Key=file,
+        ChecksumMode='ENABLED',
+    )
+    with open(basename, 'wb') as f:
+        for chunk in response.get('Body').iter_chunks(chunk_size=65536):
+            f.write(chunk)
+    os.chdir(path)
+    return response
+
+
 def create_temp_file(size, file_name):
     random_file_name = file_name + "-" + str(uuid.uuid4().hex[:6])
     with open(random_file_name, 'wb') as f:
@@ -112,7 +128,7 @@ class TestUpload:
             s3.upload(resource, bucket_name, file, sha256)
 
             # Verify
-            response = s3.download(resource, bucket_name, tmp, file)
+            response = download(resource, bucket_name, tmp, file)
             cmpsha = s3.hash(cmpfile)
 
             assert (response.get("ResponseMetadata").get(

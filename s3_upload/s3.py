@@ -44,22 +44,6 @@ def get_object_sha256(resource: S3ServiceResource, bucket: str, file: str):
     return response
 
 
-def download(resource: S3ServiceResource, bucket: str, folder: str, file: str):
-    basename = os.path.basename(file)
-    path = os.getcwd()
-    os.chdir(folder)
-    response = resource.meta.client.get_object(
-        Bucket=bucket,
-        Key=file,
-        ChecksumMode='ENABLED',
-    )
-    with open(basename, 'wb') as f:
-        for chunk in response.get('Body').iter_chunks(chunk_size=65536):
-            f.write(chunk)
-    os.chdir(path)
-    return response
-
-
 def hash(file: str) -> str:
     sha256 = hashlib.sha256()
     with open(file, 'rb') as f:
