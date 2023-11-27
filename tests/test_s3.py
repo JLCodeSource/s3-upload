@@ -95,20 +95,27 @@ def test_main():
     # Setup
     Path(source).mkdir(exist_ok=True)
     Path(tmp).mkdir(exist_ok=True)
+    status_file = "status.json"
     create_dir_structure(source, 3, 2, 2)
 
     # Test
     s3.main(source, tmp)
 
     # Verify
-    # TODO add actual test for main!
-    assert True
+    files = s3.check_status(status_file)
+    for file, sha256 in files.items():
+        response = s3.get_object_sha256(
+            resource, bucket_name, file)
+        assert (response.get("ResponseMetadata").get(
+                "HTTPStatusCode") == 200)
+        assert (response.get("ChecksumSHA256") == sha256)
 
     # Cleanup
     os.chdir(pwd)
     clean_up_dir(source)
     clean_up_dir(tmp)
     clean_up_s3(resource, bucket_name, "/")
+    os.remove(status_file)
 
 
 class TestUpload:

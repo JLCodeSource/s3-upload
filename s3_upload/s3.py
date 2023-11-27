@@ -92,9 +92,10 @@ def main(source: str, target: str) -> None:
 
     set_hash(files)
 
-    for file, sha in files.items():
-        upload(resource, bucket_name, file, sha)
-        download(resource, bucket_name, target, file)
+    for file, sha256 in files.items():
+        upload(resource, bucket_name, file, sha256)
+
+    save_status(files, "status.json")
 
 
 main("", "")
