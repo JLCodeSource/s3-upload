@@ -14,13 +14,13 @@ resource: S3ServiceResource = boto3.resource('s3')
 bucket_name = 'gb-upload'
 
 
-def upload(
+async def upload(
         resource: S3ServiceResource,
         bucket: str,
         file: str,
         sha256: str) -> None:
     try:
-        response = get_object_sha256(resource, bucket, file)
+        response = await get_object_sha256(resource, bucket, file)
         if response.get("ChecksumSHA256") == sha256:
             raise FileExistsError
     except exceptions.ClientError:
@@ -33,7 +33,8 @@ def upload(
                 ChecksumSHA256=sha256)
 
 
-def get_object_sha256(resource: S3ServiceResource, bucket: str, file: str):
+async def get_object_sha256(
+        resource: S3ServiceResource, bucket: str, file: str):
     try:
         response = resource.meta.client.head_object(
             Bucket=bucket,
@@ -94,7 +95,7 @@ async def main(source: str, target: str) -> None:
     await set_hash(files)
 
     for file, sha256 in files.items():
-        upload(resource, bucket_name, file, sha256)
+        await upload(resource, bucket_name, file, sha256)
 
     save_status(files, "status.json")
 

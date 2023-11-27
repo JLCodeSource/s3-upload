@@ -1,4 +1,3 @@
-import asyncio
 import shutil
 import uuid
 import os
@@ -92,7 +91,8 @@ def clean_up_dir(dir):
     shutil.rmtree(dir)
 
 
-def test_main():
+@pytest.mark.asyncio
+async def test_main():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
     Path(source + rand).mkdir(exist_ok=True)
@@ -101,12 +101,12 @@ def test_main():
     create_dir_structure(source + rand, 3, 2, 2)
 
     # Test
-    asyncio.run(s3.main(source + rand, tmp + rand))
+    await s3.main(source + rand, tmp + rand)
 
     # Verify
     files = s3.check_status(status_file)
     for file, sha256 in files.items():
-        response = s3.get_object_sha256(
+        response = await s3.get_object_sha256(
             resource, bucket_name, file)
         assert (response.get("ResponseMetadata").get(
                 "HTTPStatusCode") == 200)
@@ -136,7 +136,7 @@ class TestUpload:
             sha256 = await s3.hash(file)
 
             # Test
-            s3.upload(resource, bucket_name, file, sha256)
+            await s3.upload(resource, bucket_name, file, sha256)
 
             # Verify
             response = download(resource, bucket_name, tmp + rand, file)
@@ -164,11 +164,11 @@ class TestUpload:
 
         for file in files.keys():
             sha256 = await s3.hash(file)
-            s3.upload(resource, bucket_name, file, sha256)
+            await s3.upload(resource, bucket_name, file, sha256)
 
             # Test
             with pytest.raises(FileExistsError):
-                s3.upload(resource, bucket_name, file, sha256)
+                await s3.upload(resource, bucket_name, file, sha256)
 
         # Cleanup
         os.chdir(pwd)
@@ -190,10 +190,11 @@ class TestGetObjectSha:
 
         for file in files:
             sha256 = await s3.hash(file)
-            s3.upload(resource, bucket_name, file, sha256)
+            await s3.upload(resource, bucket_name, file, sha256)
 
             # Test
-            head_object = s3.get_object_sha256(resource, bucket_name, file)
+            head_object = await s3.get_object_sha256(
+                resource, bucket_name, file)
 
             # Verify
             assert (head_object is not None)
@@ -204,10 +205,11 @@ class TestGetObjectSha:
         clean_up_dir(source+rand)
         clean_up_s3(resource, bucket_name, "/")
 
-    def test_get_object_sha256_no_file(self):
+    @pytest.mark.asyncio
+    async def test_get_object_sha256_no_file(self):
         # Test
         with pytest.raises(exceptions.ClientError):
-            _ = s3.get_object_sha256(
+            await s3.get_object_sha256(
                 resource, bucket_name, "not_a_file")
 
 
