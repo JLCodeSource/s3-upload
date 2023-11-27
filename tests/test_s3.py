@@ -318,3 +318,22 @@ async def test_status():
     os.chdir(pwd)
     os.remove(status_file)
     clean_up_dir(source+rand)
+
+
+class TestTasks:
+
+    @pytest.mark.asyncio
+    async def test_add_to_tasklist(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 2, 3, 2)
+
+        got_files: dict[str, str] = s3.get_local_files(source+rand)
+
+        # Test
+        want_tasks: list[str] = s3.add_to_tasklist(got_files)
+
+        # Verify
+        for task in want_tasks:
+            assert (task in got_files)
