@@ -137,7 +137,7 @@ def test_get_object_sha256():
         s3.upload(resource, bucket_name, file, sha256)
 
         # Test
-        head_object = s3.getObjectSha(resource, bucket_name, file)
+        head_object = s3.get_object_sha256(resource, bucket_name, file)
 
         # Verify
         assert (head_object.get("ChecksumSHA256") == sha256)
