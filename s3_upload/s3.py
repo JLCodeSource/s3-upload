@@ -46,10 +46,10 @@ async def get_object_sha256(
 
 
 async def hash(file: str) -> str:
-    sha256 = hashlib.sha256()
+    sha256: hashlib._Hash = hashlib.sha256()
     with open(file, 'rb') as f:
         while True:
-            data = f.read(BUF_SIZE)
+            data: bytes = f.read(BUF_SIZE)
             if not data:
                 break
             sha256.update(data)
@@ -58,7 +58,7 @@ async def hash(file: str) -> str:
 
 def get_local_files(path: str) -> dict[str, str]:
     file_out: dict[str, str] = {}
-    for root, dirs, files in os.walk(path):
+    for root, _, files in os.walk(path):
         for name in files:
             file_out[os.path.join(root, name)] = ""
     return file_out

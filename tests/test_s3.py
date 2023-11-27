@@ -19,7 +19,8 @@ source: str = os.path.join(pwd, 'source')
 tmp: str = os.path.join(pwd, 'tmp')
 
 
-async def download(client: AioBaseClient, bucket: str, folder: str, file: str):
+""" async def download(client: AioBaseClient,
+        bucket: str, folder: str, file: str):
     basename = os.path.basename(file)
     path = os.getcwd()
     os.chdir(folder)
@@ -32,7 +33,7 @@ async def download(client: AioBaseClient, bucket: str, folder: str, file: str):
         async for chunk in response.get('Body').iter_chunks(chunk_size=65536):
             f.write(chunk)
     os.chdir(path)
-    return response
+    return response """
 
 
 def create_temp_file(size, file_name):
@@ -103,7 +104,7 @@ async def test_main():
     # Test
     await s3.main(source + rand, tmp + rand)
 
-    session = get_session()
+    session: AioSession = get_session()
     async with session.create_client('s3') as client:
         # Verify
         files = s3.check_status(status_file)
@@ -130,12 +131,12 @@ class TestUpload:
         Path(source + rand).mkdir(exist_ok=True)
         Path(tmp + rand).mkdir(exist_ok=True)
         create_dir_structure(source + rand, 1, 1, 1)
-        files = s3.get_local_files(source + rand)
+        files: dict[str, str] = s3.get_local_files(source + rand)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
             for file in files.keys():
-                sha256 = await s3.hash(file)
+                sha256: str = await s3.hash(file)
 
                 # Test
                 await s3.upload(client, bucket_name, file, sha256)
@@ -163,11 +164,11 @@ class TestUpload:
         create_dir_structure(source+rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(source+rand)
 
-        session = get_session()
+        session: AioSession = get_session()
         async with session.create_client('s3') as client:
 
             for file in files.keys():
-                sha256 = await s3.hash(file)
+                sha256: str = await s3.hash(file)
                 await s3.upload(client, bucket_name, file, sha256)
 
                 # Test
@@ -195,7 +196,7 @@ class TestGetObjectSha:
         async with session.create_client('s3') as client:
 
             for file in files:
-                sha256 = await s3.hash(file)
+                sha256: str = await s3.hash(file)
                 await s3.upload(client, bucket_name, file, sha256)
 
                 # Test
@@ -213,7 +214,7 @@ class TestGetObjectSha:
 
     @pytest.mark.asyncio
     async def test_get_object_sha256_no_file(self):
-        session = get_session()
+        session: AioSession = get_session()
         async with session.create_client('s3') as client:
             # Test
             with pytest.raises(exceptions.ClientError):
@@ -230,7 +231,7 @@ def test_get_local_files():
     got_files: dict[str, str] = s3.get_local_files(source+rand)
 
     want_files: dict[str, str] = {}
-    for root, dirs, files in os.walk(source+rand):
+    for root, _, files in os.walk(source+rand):
         for name in files:
             want_files[os.path.join(root, name)] = ""
 
@@ -255,9 +256,9 @@ async def test_set_hash():
     await s3.set_hash(got_files)
 
     want_files: dict[str, str] = {}
-    for root, dirs, files in os.walk(source+rand):
+    for root, _, files in os.walk(source+rand):
         for name in files:
-            file = os.path.join(root, name)
+            file: str = os.path.join(root, name)
             want_files[file] = await s3.hash(file)
 
     # Verify
