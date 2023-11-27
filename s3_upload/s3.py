@@ -64,10 +64,18 @@ def get_local_files(path: str) -> dict[str, str]:
     return file_out
 
 
-async def set_hash(files) -> None:
+async def set_hash(files: dict[str, str]) -> None:
     for file in files:
         sha256: str = await hash(file)
         files[file] = sha256
+
+
+def add_to_tasklist(files: dict[str, str]) -> list[str]:
+    task_list: list[str] = []
+    for file, state in files.items():
+        if state == "":
+            task_list.append(file)
+    return task_list
 
 
 def save_status(files: dict[str, str], status_file: str) -> None:

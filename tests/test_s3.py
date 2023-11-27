@@ -1,4 +1,6 @@
+import asyncio
 import shutil
+from typing import Iterator
 import uuid
 import os
 import random
@@ -6,7 +8,8 @@ import json
 from pathlib import Path
 
 from aiobotocore.session import (
-    get_session, AioBaseClient, AioSession)
+    get_session, AioSession)
+from types_aiobotocore_s3.client import S3Client
 from botocore import exceptions
 import pytest
 from s3_upload import s3
@@ -19,21 +22,22 @@ source: str = os.path.join(pwd, 'source')
 tmp: str = os.path.join(pwd, 'tmp')
 
 
-""" async def download(client: AioBaseClient,
-        bucket: str, folder: str, file: str):
-    basename = os.path.basename(file)
-    path = os.getcwd()
+async def download(client: S3Client,
+                   bucket: str, folder: str, file: str):
+    basename: str = os.path.basename(file)
+    path: str = os.getcwd()
     os.chdir(folder)
     response = await client.get_object(
         Bucket=bucket,
         Key=file,
         ChecksumMode='ENABLED',
-    )  # type: ignore
+    )
     with open(basename, 'wb') as f:
-        async for chunk in response.get('Body').iter_chunks(chunk_size=65536):
+        for chunk in await response.get('Body').iter_chunks(
+                chunk_size=65536):
             f.write(chunk)
     os.chdir(path)
-    return response """
+    return response
 
 
 def create_temp_file(size, file_name):
@@ -72,11 +76,11 @@ def create_dir_structure(root, dirs, subs, files):
                     1024, (10*1024*1024), 1), file)
 
 
-async def clean_up_s3(client: AioBaseClient, bucket: str, folder: str) -> None:
+async def clean_up_s3(client: S3Client, bucket: str, folder: str) -> None:
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
         objects_to_delete = await client.list_objects(
-            Bucket=bucket, Prefix=folder)  # type: ignore
+            Bucket=bucket, Prefix=folder)
 
         delete_keys = {'Objects': []}  # type: ignore
         delete_keys['Objects'] = [
@@ -148,6 +152,17 @@ class TestUpload:
                 assert (response.get("ResponseMetadata").get(
                     "HTTPStatusCode") == 200)
                 assert (response.get("ChecksumSHA256") == sha256)
+
+                # TODO: get download working async
+                # response = await download(client,
+                #                          bucket_name, tmp + rand, file)
+                # os.chdir(tmp + rand)
+                # cmphash: str = await s3.hash(file)
+
+                # assert (response.get("ResponseMetadata").get(
+                #        "HTTPStatusCode") == 200)
+                # assert (response.get("ChecksumSHA256") == sha256)
+                # assert (cmphash == sha256)
 
         # Cleanup
         os.chdir(pwd)
