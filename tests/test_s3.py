@@ -3,6 +3,7 @@ import uuid
 import os
 import random
 import boto3
+import json
 from pathlib import Path
 
 from mypy_boto3_s3 import S3ServiceResource
@@ -80,6 +81,7 @@ def test_main():
     s3.main(source, tmp)
 
     # Verify
+    # TODO add actual test for main!
     assert True
 
     # Cleanup
@@ -193,4 +195,32 @@ def test_set_hash():
 
     # Cleanup
     os.chdir(pwd)
+    clean_up_dir(source)
+
+
+def test_save_status():
+    # Setup
+    pwd = os.getcwd()
+    source = os.path.join(pwd, 'source')
+    Path(source).mkdir(exist_ok=True)
+    create_dir_structure(source, 2, 3, 2)
+    status_file = 'status.json'
+
+    got_files: dict[str, str] = s3.get_local_files(source)
+    s3.set_hash(got_files)
+
+    # Test
+    os.chdir(pwd)
+    s3.save_status(got_files, status_file)
+
+    with open(status_file, 'r') as json_file:
+        want_files: dict[str, str] = json.load(json_file)
+
+    # Verify
+    for file in got_files:
+        assert (got_files[file] == want_files[file])
+
+    # Cleanup
+    os.chdir(pwd)
+    os.remove(status_file)
     clean_up_dir(source)

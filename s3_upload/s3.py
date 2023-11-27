@@ -1,3 +1,4 @@
+import json
 import boto3
 import os
 import hashlib
@@ -80,6 +81,11 @@ def set_hash(files) -> None:
     for file in files:
         sha256: str = hash(file)
         files[file] = sha256
+
+
+def save_status(files: dict[str, str], status_file: str):
+    with open(status_file, 'w') as f:
+        f.write(json.dumps(files, indent=2))
 
 
 def main(source: str, target: str) -> None:
