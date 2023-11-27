@@ -32,7 +32,7 @@ def upload(
                 ChecksumSHA256=sha256)
 
 
-def getObjSha(resource: S3ServiceResource, bucket: str, file: str):
+def getObjectSha(resource: S3ServiceResource, bucket: str, file: str):
     response = resource.meta.client.head_object(
         Bucket=bucket,
         Key=file,
