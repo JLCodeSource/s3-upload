@@ -83,9 +83,14 @@ def set_hash(files) -> None:
         files[file] = sha256
 
 
-def save_status(files: dict[str, str], status_file: str):
+def save_status(files: dict[str, str], status_file: str) -> None:
     with open(status_file, 'w') as f:
         f.write(json.dumps(files, indent=2))
+
+
+def check_status(status_file: str) -> dict[str, str]:
+    with open(status_file, 'r') as json_file:
+        return json.load(json_file)
 
 
 def main(source: str, target: str) -> None:

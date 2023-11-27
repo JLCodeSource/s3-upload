@@ -198,7 +198,7 @@ def test_set_hash():
     clean_up_dir(source)
 
 
-def test_save_status():
+def test_status():
     # Setup
     pwd = os.getcwd()
     source = os.path.join(pwd, 'source')
@@ -209,7 +209,7 @@ def test_save_status():
     got_files: dict[str, str] = s3.get_local_files(source)
     s3.set_hash(got_files)
 
-    # Test
+    # Test Save Status
     os.chdir(pwd)
     s3.save_status(got_files, status_file)
 
@@ -218,6 +218,13 @@ def test_save_status():
 
     # Verify
     for file in got_files:
+        assert (got_files[file] == want_files[file])
+
+    # Test Check Status
+    got_files = s3.check_status(status_file)
+
+    # Verify
+    for file in want_files:
         assert (got_files[file] == want_files[file])
 
     # Cleanup
