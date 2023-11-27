@@ -5,7 +5,7 @@ import random
 import json
 from pathlib import Path
 
-from aiobotocore.session import (  # type: ignore
+from aiobotocore.session import (
     get_session, AioBaseClient, AioSession)
 from botocore import exceptions
 import pytest

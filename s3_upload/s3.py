@@ -5,7 +5,7 @@ import hashlib
 import base64
 import sys
 
-from aiobotocore.session import (  # type: ignore
+from aiobotocore.session import (
     get_session, AioSession, AioBaseClient)
 from botocore import exceptions
 
@@ -24,22 +24,22 @@ async def upload(
             raise FileExistsError
     except exceptions.ClientError:
         with open(file, 'rb') as f:
-            await client.put_object(
+            await client.put_object(  # type: ignore
                 Bucket=bucket,
                 Body=f,
                 Key=file,
                 ChecksumAlgorithm='SHA256',
-                ChecksumSHA256=sha256)  # type: ignore
+                ChecksumSHA256=sha256)
 
 
 async def get_object_sha256(
         client: AioBaseClient, bucket: str, file: str):
     try:
-        response = await client.head_object(
+        response = await client.head_object(   # type: ignore
             Bucket=bucket,
             Key=file,
             ChecksumMode='ENABLED'
-        )  # type: ignore
+        )
     except exceptions.ClientError:
         raise
     return response
