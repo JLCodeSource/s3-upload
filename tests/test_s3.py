@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import uuid
 import os
@@ -93,13 +94,14 @@ def clean_up_dir(dir):
 
 def test_main():
     # Setup
-    Path(source).mkdir(exist_ok=True)
-    Path(tmp).mkdir(exist_ok=True)
+    rand = str(uuid.uuid4().hex[:6])
+    Path(source + rand).mkdir(exist_ok=True)
+    Path(tmp + rand).mkdir(exist_ok=True)
     status_file = "status.json"
-    create_dir_structure(source, 3, 2, 2)
+    create_dir_structure(source + rand, 3, 2, 2)
 
     # Test
-    s3.main(source, tmp)
+    asyncio.run(s3.main(source + rand, tmp + rand))
 
     # Verify
     files = s3.check_status(status_file)
@@ -112,31 +114,33 @@ def test_main():
 
     # Cleanup
     os.chdir(pwd)
-    clean_up_dir(source)
-    clean_up_dir(tmp)
+    clean_up_dir(source + rand)
+    clean_up_dir(tmp + rand)
     clean_up_s3(resource, bucket_name, "/")
     os.remove(status_file)
 
 
 class TestUpload:
-    def test_upload(self):
+    @pytest.mark.asyncio
+    async def test_upload(self):
         # Setup
-        Path(source).mkdir(exist_ok=True)
-        Path(tmp).mkdir(exist_ok=True)
-        create_dir_structure(source, 1, 1, 1)
-        files = s3.get_local_files(source)
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source + rand).mkdir(exist_ok=True)
+        Path(tmp + rand).mkdir(exist_ok=True)
+        create_dir_structure(source + rand, 1, 1, 1)
+        files = s3.get_local_files(source + rand)
 
         for file in files.keys():
             filename = os.path.basename(file)
-            cmpfile = os.path.join(tmp, filename)
-            sha256 = s3.hash(file)
+            cmpfile = os.path.join(tmp + rand, filename)
+            sha256 = await s3.hash(file)
 
             # Test
             s3.upload(resource, bucket_name, file, sha256)
 
             # Verify
-            response = download(resource, bucket_name, tmp, file)
-            cmpsha = s3.hash(cmpfile)
+            response = download(resource, bucket_name, tmp + rand, file)
+            cmpsha = await s3.hash(cmpfile)
 
             assert (response.get("ResponseMetadata").get(
                 "HTTPStatusCode") == 200)
@@ -145,19 +149,21 @@ class TestUpload:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source)
-        clean_up_dir(tmp)
+        clean_up_dir(source + rand)
+        clean_up_dir(tmp + rand)
         clean_up_s3(resource, bucket_name, "/")
 
-    def test_upload_exists(self):
+    @pytest.mark.asyncio
+    async def test_upload_exists(self):
         # Setup
-        Path(source).mkdir(exist_ok=True)
-        Path(tmp).mkdir(exist_ok=True)
-        create_dir_structure(source, 1, 1, 1)
-        files: dict[str, str] = s3.get_local_files(source)
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        Path(tmp+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 1, 1, 1)
+        files: dict[str, str] = s3.get_local_files(source+rand)
 
         for file in files.keys():
-            sha256 = s3.hash(file)
+            sha256 = await s3.hash(file)
             s3.upload(resource, bucket_name, file, sha256)
 
             # Test
@@ -166,22 +172,24 @@ class TestUpload:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source)
-        clean_up_dir(tmp)
+        clean_up_dir(source + rand)
+        clean_up_dir(tmp + rand)
         clean_up_s3(resource, bucket_name, "/")
 
 
 class TestGetObjectSha:
 
-    def test_get_object_sha256(self):
+    @pytest.mark.asyncio
+    async def test_get_object_sha256(self):
         # Setup
-        Path(source).mkdir(exist_ok=True)
-        create_dir_structure(source, 1, 1, 1)
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 1, 1, 1)
 
-        files: dict[str, str] = s3.get_local_files(source)
+        files: dict[str, str] = s3.get_local_files(source+rand)
 
         for file in files:
-            sha256 = s3.hash(file)
+            sha256 = await s3.hash(file)
             s3.upload(resource, bucket_name, file, sha256)
 
             # Test
@@ -193,7 +201,7 @@ class TestGetObjectSha:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source)
+        clean_up_dir(source+rand)
         clean_up_s3(resource, bucket_name, "/")
 
     def test_get_object_sha256_no_file(self):
@@ -205,16 +213,15 @@ class TestGetObjectSha:
 
 def test_get_local_files():
     # Setup
-    pwd = os.getcwd()
-    source = os.path.join(pwd, 'source')
-    Path(source).mkdir(exist_ok=True)
-    create_dir_structure(source, 2, 3, 2)
+    rand = str(uuid.uuid4().hex[:6])
+    Path(source+rand).mkdir(exist_ok=True)
+    create_dir_structure(source+rand, 2, 3, 2)
 
     # Test
-    got_files: dict[str, str] = s3.get_local_files(source)
+    got_files: dict[str, str] = s3.get_local_files(source+rand)
 
     want_files: dict[str, str] = {}
-    for root, dirs, files in os.walk(source):
+    for root, dirs, files in os.walk(source+rand):
         for name in files:
             want_files[os.path.join(root, name)] = ""
 
@@ -224,25 +231,25 @@ def test_get_local_files():
 
     # Cleanup
     os.chdir(pwd)
-    clean_up_dir(source)
+    clean_up_dir(source+rand)
 
 
-def test_set_hash():
+@pytest.mark.asyncio
+async def test_set_hash():
     # Setup
-    pwd = os.getcwd()
-    source = os.path.join(pwd, 'source')
-    Path(source).mkdir(exist_ok=True)
-    create_dir_structure(source, 2, 3, 2)
+    rand = str(uuid.uuid4().hex[:6])
+    Path(source+rand).mkdir(exist_ok=True)
+    create_dir_structure(source+rand, 2, 3, 2)
 
     # Test
-    got_files: dict[str, str] = s3.get_local_files(source)
-    s3.set_hash(got_files)
+    got_files: dict[str, str] = s3.get_local_files(source+rand)
+    await s3.set_hash(got_files)
 
     want_files: dict[str, str] = {}
-    for root, dirs, files in os.walk(source):
+    for root, dirs, files in os.walk(source+rand):
         for name in files:
             file = os.path.join(root, name)
-            want_files[file] = s3.hash(file)
+            want_files[file] = await s3.hash(file)
 
     # Verify
     for file in got_files:
@@ -250,19 +257,19 @@ def test_set_hash():
 
     # Cleanup
     os.chdir(pwd)
-    clean_up_dir(source)
+    clean_up_dir(source+rand)
 
 
-def test_status():
+@pytest.mark.asyncio
+async def test_status():
     # Setup
-    pwd = os.getcwd()
-    source = os.path.join(pwd, 'source')
-    Path(source).mkdir(exist_ok=True)
-    create_dir_structure(source, 2, 3, 2)
+    rand = str(uuid.uuid4().hex[:6])
+    Path(source+rand).mkdir(exist_ok=True)
+    create_dir_structure(source+rand, 2, 3, 2)
     status_file = 'status.json'
 
-    got_files: dict[str, str] = s3.get_local_files(source)
-    s3.set_hash(got_files)
+    got_files: dict[str, str] = s3.get_local_files(source+rand)
+    await s3.set_hash(got_files)
 
     # Test Save Status
     os.chdir(pwd)
@@ -285,4 +292,4 @@ def test_status():
     # Cleanup
     os.chdir(pwd)
     os.remove(status_file)
-    clean_up_dir(source)
+    clean_up_dir(source+rand)

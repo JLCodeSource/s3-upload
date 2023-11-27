@@ -1,3 +1,4 @@
+import asyncio
 import json
 import boto3
 import os
@@ -44,7 +45,7 @@ def get_object_sha256(resource: S3ServiceResource, bucket: str, file: str):
     return response
 
 
-def hash(file: str) -> str:
+async def hash(file: str) -> str:
     sha256 = hashlib.sha256()
     with open(file, 'rb') as f:
         while True:
@@ -63,9 +64,9 @@ def get_local_files(path: str) -> dict[str, str]:
     return file_out
 
 
-def set_hash(files) -> None:
+async def set_hash(files) -> None:
     for file in files:
-        sha256: str = hash(file)
+        sha256: str = await hash(file)
         files[file] = sha256
 
 
@@ -79,7 +80,7 @@ def check_status(status_file: str) -> dict[str, str]:
         return json.load(json_file)
 
 
-def main(source: str, target: str) -> None:
+async def main(source: str, target: str) -> None:
     if len(sys.argv) <= 2:
         print("Provide source path")
         sys.exit()
@@ -90,7 +91,7 @@ def main(source: str, target: str) -> None:
 
     files: dict[str, str] = get_local_files(source)
 
-    set_hash(files)
+    await set_hash(files)
 
     for file, sha256 in files.items():
         upload(resource, bucket_name, file, sha256)
@@ -98,4 +99,4 @@ def main(source: str, target: str) -> None:
     save_status(files, "status.json")
 
 
-main("", "")
+asyncio.run(main("", ""))
