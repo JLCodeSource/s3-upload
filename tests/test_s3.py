@@ -4,6 +4,8 @@ import os
 import random
 import boto3
 from pathlib import Path
+
+from mypy_boto3_s3 import S3ServiceResource
 from s3_upload import s3
 
 
@@ -47,6 +49,20 @@ def create_dir_structure(root, dirs, subs, files):
                     1024, (10*1024*1024), 1), file)
 
 
+def clean_up_s3(resource: S3ServiceResource, bucket: str, folder: str) -> None:
+    objects_to_delete = resource.meta.client.list_objects(
+        Bucket=bucket, Prefix=folder)
+
+    delete_keys = {'Objects': []}  # type: ignore
+    delete_keys['Objects'] = [
+        {'Key': k} for k in [
+            obj['Key'] for obj in objects_to_delete.get(  # type: ignore
+                'Contents', [])]]  # type: ignore
+
+    resource.meta.client.delete_objects(
+        Bucket=bucket, Delete=delete_keys)  # type: ignore
+
+
 def clean_up_dir(dir):
     shutil.rmtree(dir)
 
@@ -69,6 +85,7 @@ def test_main():
     os.chdir(pwd)
     clean_up_dir(source)
     clean_up_dir(tmp)
+    clean_up_s3(resource, bucket_name, "/")
 
 
 def test_upload():
@@ -98,6 +115,7 @@ def test_upload():
     os.chdir(pwd)
     clean_up_dir(source)
     clean_up_dir(target)
+    clean_up_s3(resource, bucket_name, "/")
 
 
 def test_get_object_sha256():
@@ -117,3 +135,4 @@ def test_get_object_sha256():
 
     os.chdir(pwd)
     clean_up_dir(source)
+    clean_up_s3(resource, bucket_name, "/")

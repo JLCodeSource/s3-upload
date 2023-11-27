@@ -57,11 +57,6 @@ def download(resource: S3ServiceResource, bucket: str, folder: str, file: str):
     return response
 
 
-def delete(resource: S3ServiceResource, bucket: str, file: str) -> None:
-    resource.Object(bucket, file).delete()
-    os.remove(file)
-
-
 def hash(file: str) -> str:
     sha256 = hashlib.sha256()
     with open(file, 'rb') as f:
