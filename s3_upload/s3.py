@@ -18,13 +18,18 @@ def upload(
         bucket: str,
         file: str,
         sha256: str) -> None:
-    with open(file, 'rb') as f:
-        resource.meta.client.put_object(
-            Bucket=bucket,
-            Body=f,
-            Key=file,
-            ChecksumAlgorithm='SHA256',
-            ChecksumSHA256=sha256)
+    try:
+        response = get_object_sha256(resource, bucket, file)
+        if response.get("ChecksumSHA256") == sha256:
+            raise FileExistsError
+    except exceptions.ClientError:
+        with open(file, 'rb') as f:
+            resource.meta.client.put_object(
+                Bucket=bucket,
+                Body=f,
+                Key=file,
+                ChecksumAlgorithm='SHA256',
+                ChecksumSHA256=sha256)
 
 
 def get_object_sha256(resource: S3ServiceResource, bucket: str, file: str):
@@ -35,7 +40,7 @@ def get_object_sha256(resource: S3ServiceResource, bucket: str, file: str):
             ChecksumMode='ENABLED'
         )
     except exceptions.ClientError:
-        return
+        raise
     return response
 
 

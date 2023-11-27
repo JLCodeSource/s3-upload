@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 from mypy_boto3_s3 import S3ServiceResource
+from botocore import exceptions
+import pytest
 from s3_upload import s3
 
 
@@ -93,34 +95,57 @@ def test_main():
     clean_up_s3(resource, bucket_name, "/")
 
 
-def test_upload():
-    # Setup
-    Path(source).mkdir(exist_ok=True)
-    Path(tmp).mkdir(exist_ok=True)
-    create_dir_structure(source, 1, 1, 1)
-    files = s3.get_local_files(source)
+class TestUpload:
+    def test_upload(self):
+        # Setup
+        Path(source).mkdir(exist_ok=True)
+        Path(tmp).mkdir(exist_ok=True)
+        create_dir_structure(source, 1, 1, 1)
+        files = s3.get_local_files(source)
 
-    for file in files.keys():
-        filename = os.path.basename(file)
-        cmpfile = os.path.join(tmp, filename)
-        sha256 = s3.hash(file)
+        for file in files.keys():
+            filename = os.path.basename(file)
+            cmpfile = os.path.join(tmp, filename)
+            sha256 = s3.hash(file)
 
-        # Test
-        s3.upload(resource, bucket_name, file, sha256)
+            # Test
+            s3.upload(resource, bucket_name, file, sha256)
 
-        # Verify
-        response = s3.download(resource, bucket_name, tmp, file)
-        cmpsha = s3.hash(cmpfile)
+            # Verify
+            response = s3.download(resource, bucket_name, tmp, file)
+            cmpsha = s3.hash(cmpfile)
 
-        assert (response.get("ResponseMetadata").get("HTTPStatusCode") == 200)
-        assert (response.get("ChecksumSHA256") == sha256)
-        assert (sha256 == cmpsha)
+            assert (response.get("ResponseMetadata").get(
+                "HTTPStatusCode") == 200)
+            assert (response.get("ChecksumSHA256") == sha256)
+            assert (sha256 == cmpsha)
 
-    # Cleanup
-    os.chdir(pwd)
-    clean_up_dir(source)
-    clean_up_dir(tmp)
-    clean_up_s3(resource, bucket_name, "/")
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source)
+        clean_up_dir(tmp)
+        clean_up_s3(resource, bucket_name, "/")
+
+    def test_upload_exists(self):
+        # Setup
+        Path(source).mkdir(exist_ok=True)
+        Path(tmp).mkdir(exist_ok=True)
+        create_dir_structure(source, 1, 1, 1)
+        files: dict[str, str] = s3.get_local_files(source)
+
+        for file in files.keys():
+            sha256 = s3.hash(file)
+            s3.upload(resource, bucket_name, file, sha256)
+
+            # Test
+            with pytest.raises(FileExistsError):
+                s3.upload(resource, bucket_name, file, sha256)
+
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source)
+        clean_up_dir(tmp)
+        clean_up_s3(resource, bucket_name, "/")
 
 
 class TestGetObjectSha:
@@ -150,10 +175,9 @@ class TestGetObjectSha:
 
     def test_get_object_sha256_no_file(self):
         # Test
-        head_object = s3.get_object_sha256(
-            resource, bucket_name, "not_a_file")
-        # Verify
-        assert (head_object is None)
+        with pytest.raises(exceptions.ClientError):
+            _ = s3.get_object_sha256(
+                resource, bucket_name, "not_a_file")
 
 
 def test_get_local_files():
