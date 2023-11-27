@@ -82,6 +82,7 @@ def test_main():
     # Verify
     assert True
 
+    # Cleanup
     os.chdir(pwd)
     clean_up_dir(source)
     clean_up_dir(tmp)
@@ -96,7 +97,7 @@ def test_upload():
     target = os.path.join(pwd, 'tmp')
     Path(target).mkdir(exist_ok=True)
     create_dir_structure(source, 1, 1, 1)
-    files = s3.walk(source)
+    files = s3.get_local_files(source)
     filename = os.path.basename(files[0])
     cmpfile = os.path.join(target, filename)
     sha256 = s3.hash(files[0])
@@ -112,6 +113,7 @@ def test_upload():
     assert (response.get("ChecksumSHA256") == sha256)
     assert (sha256 == cmpsha)
 
+    # Cleanup
     os.chdir(pwd)
     clean_up_dir(source)
     clean_up_dir(target)
@@ -124,15 +126,41 @@ def test_get_object_sha256():
     source = os.path.join(pwd, 'source')
     Path(source).mkdir(exist_ok=True)
     create_dir_structure(source, 1, 1, 1)
-    files = s3.walk(source)
+    files = s3.get_local_files(source)
     sha256 = s3.hash(files[0])
     s3.upload(resource, bucket_name, files[0], sha256)
 
     # Test
     headObj = s3.getObjectSha(resource, bucket_name, files[0])
 
+    # Verify
     assert (headObj.get("ChecksumSHA256") == sha256)
 
+    # Cleanup
     os.chdir(pwd)
     clean_up_dir(source)
     clean_up_s3(resource, bucket_name, "/")
+
+
+def test_get_local_files():
+    # Setup
+    pwd = os.getcwd()
+    source = os.path.join(pwd, 'source')
+    Path(source).mkdir(exist_ok=True)
+    create_dir_structure(source, 2, 3, 2)
+
+    # Test
+    got_files: dict[str, str] = s3.get_local_files(source)
+
+    want_files: dict[str, str] = {}
+    for root, dirs, files in os.walk(source):
+        for name in files:
+            want_files[os.path.join(root, name)] = ""
+
+    # Verify
+    for file in got_files:
+        assert (got_files[file] == want_files[file])
+
+    # Cleanup
+    os.chdir(pwd)
+    clean_up_dir(source)

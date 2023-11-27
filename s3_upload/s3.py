@@ -78,12 +78,12 @@ def process_file(file: str, folder: str) -> None:
     # delete(s3, bucket_name, file)
 
 
-def walk(path: str):
-    file_list = []
+def get_local_files(path: str) -> dict[str, str]:
+    file_out: dict[str, str] = {}
     for root, dirs, files in os.walk(path):
         for name in files:
-            file_list.append(os.path.join(root, name))
-    return file_list
+            file_out[os.path.join(root, name)] = ""
+    return file_out
 
 
 def main(source: str, target: str) -> None:
@@ -95,7 +95,7 @@ def main(source: str, target: str) -> None:
     elif target == "":
         target = sys.argv[2]
 
-    files = walk(source)
+    files: dict[str, str] = get_local_files(source)
 
     for file in files:
         process_file(file, target)
