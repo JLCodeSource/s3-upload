@@ -1,7 +1,6 @@
 # Custom
-tmp*
 source*
-status.json
+status*.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
