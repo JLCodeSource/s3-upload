@@ -21,14 +21,14 @@ async def upload(
         bucket: str,
         file: str,
         sha256: str) -> None:
+    if sha256 == "Done":
+        logging.info(f"File {file} already uploaded; skipping")
+        return
     try:
         logging.info(
             f"Trying to upload object {file} to S3 with sha {sha256}")
         response = await get_object_sha256(client, bucket, file)
         if response.get("ChecksumSHA256") == sha256:
-            logging.warning(
-                f"Object {file} exists in S3"
-            )
             raise FileExistsError
     except exceptions.ClientError:
         with open(file, 'rb') as f:
@@ -85,11 +85,15 @@ def get_local_files(path: str) -> dict[str, str]:
     return file_out
 
 
-async def set_hash(files: dict[str, str]) -> None:
-    for file in files:
+async def set_hash(files: dict[str, str], status_file: str) -> None:
+    for file, state in files.items():
+        if state != "":
+            logging.info(f"File {file} has already been hashed, skipping")
+            continue
         sha256: str = await hash(file)
-        logging.debug(f"Updating {file} key with value {sha256}")
+        logging.info(f"Updating {file} key with value {sha256}")
         files[file] = sha256
+        save_status(files, status_file)
 
 
 async def add_files_to_queues(
@@ -114,39 +118,56 @@ def save_status(files: dict[str, str], status_file: str) -> None:
         logging.info(f"Writing status to {status_file}")
 
 
-def check_status(status_file: str) -> dict[str, str]:
-    with open(status_file, 'r') as json_file:
-        logging.info(f"Loading status from {status_file}")
-        return json.load(json_file)
+def load_status(status_file: str) -> dict[str, str]:
+    try:
+        with open(status_file, 'r') as json_file:
+            logging.info(f"Loading status from {status_file}")
+            return json.load(json_file)
+    except FileNotFoundError:
+        raise
 
 
-async def main(source: str, target: str) -> None:
+def check_status(source, status_file) -> dict[str, str]:
+    files: dict[str, str] = {}
+    try:
+        files = load_status(status_file)
+    except FileNotFoundError:
+        files = get_local_files(source)
+        save_status(files, status_file)
+    return files
+
+
+async def main(source: str, status_file: str) -> None:
     logging.basicConfig(
         format='%(asctime)s | %(levelname)s | %(message)s',
         filename='s3upload.log', level=logging.INFO)
     logging.info('Started s3uploader')
-    if len(sys.argv) <= 2:
-        logging.error("Missing arguments")
-        print("Provide source path")
-        sys.exit()
-    elif source == "":
-        source = sys.argv[1]
-        logging.info(f"Source set to {source}")
-    elif target == "":
-        target = sys.argv[2]
-        logging.info(f"Target set to {target}")
+    logging.info(f"Source set to {source}")
+    logging.info(f"Status file set to {status_file}")
 
-    files: dict[str, str] = get_local_files(source)
+    files: dict[str, str] = check_status(source, status_file)
 
-    await set_hash(files)
+    await set_hash(files, status_file)
 
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
         for file, sha256 in files.items():
-            await upload(client, bucket_name, file, sha256)
-
-    save_status(files, "status.json")
+            try:
+                await upload(client, bucket_name, file, sha256)
+            except FileExistsError:
+                logging.info(f"File {file} already exists in S3; skipping")
+            files[file] = "Done"
+            save_status(files, status_file)
 
     logging.info('Finished')
 
-asyncio.run(main("", ""))
+
+if __name__ == '__main__':
+    logging.basicConfig(
+        format='%(asctime)s | %(levelname)s | %(message)s',
+        filename='s3upload.log', level=logging.INFO)
+    if len(sys.argv) <= 2:
+        logging.error("Missing arguments")
+        print("Provide source path")
+        sys.exit()
+    asyncio.run(main(sys.argv[1], sys.argv[2]))

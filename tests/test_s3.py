@@ -18,7 +18,6 @@ bucket_name = 'gb-upload'
 # Test settings
 pwd: str = os.getcwd()
 source: str = os.path.join(pwd, 'source')
-tmp: str = os.path.join(pwd, 'tmp')
 
 
 async def download(client: S3Client,
@@ -101,28 +100,27 @@ async def test_main():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
     Path(source + rand).mkdir(exist_ok=True)
-    Path(tmp + rand).mkdir(exist_ok=True)
-    status_file = "status.json"
+    status_file: str = "status"+rand+".json"
     create_dir_structure(source + rand, 3, 2, 2)
+    os.chdir(pwd)
 
     # Test
-    await s3.main(source + rand, tmp + rand)
+    await s3.main(source + rand, status_file)
 
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
         # Verify
-        files = s3.check_status(status_file)
-        for file, sha256 in files.items():
+        files = s3.load_status(status_file)
+        for file, done in files.items():
             response = await s3.get_object_sha256(
                 client, bucket_name, file)
             assert (response.get("ResponseMetadata").get(
                     "HTTPStatusCode") == 200)
-            assert (response.get("ChecksumSHA256") == sha256)
+            assert (done == "Done")
 
     # Cleanup
     os.chdir(pwd)
     clean_up_dir(source + rand)
-    clean_up_dir(tmp + rand)
     await clean_up_s3(client, bucket_name, "/")
     os.remove(status_file)
 
@@ -133,7 +131,7 @@ class TestUpload:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source + rand).mkdir(exist_ok=True)
-        Path(tmp + rand).mkdir(exist_ok=True)
+        # Path(tmp + rand).mkdir(exist_ok=True)
         create_dir_structure(source + rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(source + rand)
 
@@ -167,7 +165,7 @@ class TestUpload:
         # Cleanup
         os.chdir(pwd)
         clean_up_dir(source + rand)
-        clean_up_dir(tmp + rand)
+        # clean_up_dir(tmp + rand)
         await clean_up_s3(client, bucket_name, "/")
 
     @pytest.mark.asyncio
@@ -175,7 +173,6 @@ class TestUpload:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        Path(tmp+rand).mkdir(exist_ok=True)
         create_dir_structure(source+rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(source+rand)
 
@@ -193,7 +190,6 @@ class TestUpload:
         # Cleanup
         os.chdir(pwd)
         clean_up_dir(source + rand)
-        clean_up_dir(tmp + rand)
         await clean_up_s3(client, bucket_name, "/")
 
 
@@ -265,10 +261,11 @@ async def test_set_hash():
     rand = str(uuid.uuid4().hex[:6])
     Path(source+rand).mkdir(exist_ok=True)
     create_dir_structure(source+rand, 2, 3, 2)
+    status_file = "status" + rand + ".json"
 
     # Test
     got_files: dict[str, str] = s3.get_local_files(source+rand)
-    await s3.set_hash(got_files)
+    await s3.set_hash(got_files, status_file)
 
     want_files: dict[str, str] = {}
     for root, _, files in os.walk(source+rand):
@@ -291,10 +288,10 @@ async def test_status():
     rand = str(uuid.uuid4().hex[:6])
     Path(source+rand).mkdir(exist_ok=True)
     create_dir_structure(source+rand, 2, 3, 2)
-    status_file = 'status.json'
+    status_file: str = 'status'+rand+'.json'
 
     got_files: dict[str, str] = s3.get_local_files(source+rand)
-    await s3.set_hash(got_files)
+    await s3.set_hash(got_files, status_file)
 
     # Test Save Status
     os.chdir(pwd)
@@ -307,8 +304,8 @@ async def test_status():
     for file in got_files:
         assert (got_files[file] == want_files[file])
 
-    # Test Check Status
-    got_files = s3.check_status(status_file)
+    # Test Load Status
+    got_files = s3.load_status(status_file)
 
     # Verify
     for file in want_files:
@@ -318,6 +315,36 @@ async def test_status():
     os.chdir(pwd)
     os.remove(status_file)
     clean_up_dir(source+rand)
+
+
+class TestCheckStatus:
+    def test_check_status_success(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 2, 3, 2)
+        status_file: str = 'status'+rand+'.json'
+
+        want_files: dict[str, str] = s3.get_local_files(source+rand)
+
+        os.chdir(pwd)
+        s3.save_status(want_files, status_file)
+
+        # Test Check Status
+        got_files: dict[str, str] = s3.check_status(source+rand, status_file)
+
+        # Verify
+
+        for file in got_files:
+            assert (got_files[file] == want_files[file])
+
+        # Cleanup
+        os.chdir(pwd)
+        os.remove(status_file)
+        clean_up_dir(source+rand)
+
+    def test_check_status_FileNotFound(self):
+        pass
 
 
 @pytest.mark.asyncio
