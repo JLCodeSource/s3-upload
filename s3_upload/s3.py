@@ -6,7 +6,9 @@ import base64
 import sys
 
 from aiobotocore.session import (
-    get_session, AioSession, AioBaseClient)
+    get_session, AioSession)
+from types_aiobotocore_s3.client import S3Client
+
 from botocore import exceptions
 
 BUF_SIZE = 65536
@@ -14,7 +16,7 @@ bucket_name = 'gb-upload'
 
 
 async def upload(
-        client: AioBaseClient,
+        client: S3Client,
         bucket: str,
         file: str,
         sha256: str) -> None:
@@ -24,7 +26,7 @@ async def upload(
             raise FileExistsError
     except exceptions.ClientError:
         with open(file, 'rb') as f:
-            await client.put_object(  # type: ignore
+            await client.put_object(
                 Bucket=bucket,
                 Body=f,
                 Key=file,
@@ -33,9 +35,9 @@ async def upload(
 
 
 async def get_object_sha256(
-        client: AioBaseClient, bucket: str, file: str):
+        client: S3Client, bucket: str, file: str):
     try:
-        response = await client.head_object(   # type: ignore
+        response = await client.head_object(
             Bucket=bucket,
             Key=file,
             ChecksumMode='ENABLED'
@@ -70,12 +72,17 @@ async def set_hash(files: dict[str, str]) -> None:
         files[file] = sha256
 
 
-def add_to_tasklist(files: dict[str, str]) -> list[str]:
-    task_list: list[str] = []
+async def add_files_to_queues(
+        files: dict[str, str],
+        hash_q: asyncio.Queue,
+        upload_q: asyncio.Queue):
     for file, state in files.items():
         if state == "":
-            task_list.append(file)
-    return task_list
+            await hash_q.put(file)
+        elif state == "Done":
+            continue
+        else:
+            await upload_q.put(file)
 
 
 def save_status(files: dict[str, str], status_file: str) -> None:

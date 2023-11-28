@@ -1,6 +1,5 @@
 import asyncio
 import shutil
-from typing import Iterator
 import uuid
 import os
 import random
@@ -320,20 +319,45 @@ async def test_status():
     clean_up_dir(source+rand)
 
 
-class TestTasks:
+@pytest.mark.asyncio
+async def test_add_files_to_queues():
+    # Setup
+    rand = str(uuid.uuid4().hex[:6])
+    Path(source+rand).mkdir(exist_ok=True)
+    create_dir_structure(source+rand, 2, 3, 2)
 
-    @pytest.mark.asyncio
-    async def test_add_to_tasklist(self):
-        # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 2, 3, 2)
+    hash_q: asyncio.Queue[str] = asyncio.Queue()
+    upload_q: asyncio.Queue[str] = asyncio.Queue()
+    got_files: dict[str, str] = s3.get_local_files(source+rand)
 
-        got_files: dict[str, str] = s3.get_local_files(source+rand)
+    counter: int = 0
+    # Make the values for (approx) 1/3rd of the files(keys) equal
+    # to a '' (i.e. continue), 1/3rd a random uuid string &
+    # 1/3rd, Done.
+    # This way we can check the add_files_to_queues logic
+    for file, _ in got_files.items():
+        if counter % 3 == 0:
+            got_files[file] = str(uuid.uuid4())
+        elif counter % 3 == 1:
+            counter = counter + 1
+            continue
+        else:
+            got_files[file] = "Done"
+        counter = counter + 1
 
-        # Test
-        want_tasks: list[str] = s3.add_to_tasklist(got_files)
+    # Test
+    session: AioSession = get_session()
+    async with session.create_client('s3') as _:
+        await s3.add_files_to_queues(
+            got_files, hash_q, upload_q)
 
-        # Verify
-        for task in want_tasks:
-            assert (task in got_files)
+    # Verify
+    # N.B. Dirty test to check that (approx) 1/3rd are in hash_q,
+    # 1/3rd are in upload_q & 1/3rd are Done
+    assert (hash_q.qsize() == 7)
+    assert (upload_q.qsize() == 7)
+    assert (sum(v == "Done" for v in got_files.values()) == 6)
+
+    # Cleanup
+    os.chdir(pwd)
+    clean_up_dir(source+rand)
