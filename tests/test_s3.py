@@ -95,6 +95,7 @@ def clean_up_dir(dir):
     shutil.rmtree(dir)
 
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_main():
     # Setup
