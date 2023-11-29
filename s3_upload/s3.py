@@ -75,7 +75,7 @@ async def hash(file: str) -> str:
 
 
 def get_local_files(path: str, max_size: int) -> dict[str, str]:
-    logging.info("Getting local files with max_size: {max_size}")
+    logging.info(f"Getting local files with max_size: {max_size}")
     file_out: dict[str, str] = {}
     for root, _, files in os.walk(path):
         for name in files:
@@ -162,30 +162,42 @@ async def main(source: str, status_file: str, max_size: int) -> None:
             files[file] = "Done"
             save_status(files, status_file)
 
-    logging.info('Finished')
+    logging.info('Finished s3uploader')
 
 
 if __name__ == '__main__':
     default_log_file = 's3upload.log'
     usage = "Usage: python s3.py source_dir status_file max_size [log_file]"
     if len(sys.argv) < 4:
+        print(f"ERROR: Missing arguments - {usage}")
+        sys.exit()
+    elif len(sys.argv) == 4:
         logging.basicConfig(
             format='%(asctime)s | %(levelname)s | %(message)s',
             filename=default_log_file, level=logging.INFO)
-
-        logging.error(f"Missing arguments - {usage}")
-        print(f"{usage}")
-        sys.exit()
-    elif len(sys.argv) == 5:
-        log_file = sys.argv[4]
+    elif len(sys.argv) >= 5:
+        log_file: str = sys.argv[4]
         logging.basicConfig(
             format='%(asctime)s | %(levelname)s | %(message)s',
             filename=log_file, level=logging.INFO)
 
-    max_size = sys.argv[3]
-    if type(max_size) is not int:
+    if len(sys.argv) > 5:
+        logging.error(f"Too many args - {usage}")
+        print(f"Too many args - {usage}")
+        sys.exit()
+
+    try:
+        max_size = int(sys.argv[3])
+    except ValueError:
         logging.error(f"Wrong type for max_size - {usage}")
-        print(f"{usage}")
+        print(f"Wrong type for max_size - {usage}")
+        sys.exit()
+
+    source: str = sys.argv[1]
+
+    if not os.path.exists(source):
+        logging.error(f"Source does not exist - {usage}")
+        print(f"Source does not exist - {usage}")
         sys.exit()
 
     asyncio.run(main(sys.argv[1], sys.argv[2], int(sys.argv[3])))
