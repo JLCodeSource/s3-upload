@@ -2,3 +2,27 @@
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+[tool.poetry]
+name = "s3-upload"
+version = "0.1.0"
+description = "s3-upload takes a folder, hashes the internal files & uploads to S3"
+authors = ["vetch101 <vetch101@googlemail.com>"]
+license = "BSD-2-Clause"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+aiobotocore = "^2.8.0"
+types-aiobotocore = "^2.7.0"
+types-aiobotocore-s3 = "^2.7.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+mypy = "^1.7.1"
+mypy-boto3-s3 = "^1.33.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
