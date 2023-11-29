@@ -163,11 +163,17 @@ async def main(source: str, status_file: str) -> None:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(
-        format='%(asctime)s | %(levelname)s | %(message)s',
-        filename='s3upload.log', level=logging.INFO)
-    if len(sys.argv) <= 2:
-        logging.error("Missing arguments")
-        print("Provide source path")
+    if len(sys.argv) < 4:
+        logging.basicConfig(
+            format='%(asctime)s | %(levelname)s | %(message)s',
+            filename='s3upload.log', level=logging.INFO)
+        usage = "Usage: python s3.py source_dir status_file log_file"
+        logging.error(f"startup | Missing arguments - {usage}")
+        print(f"{usage}")
         sys.exit()
+    else:
+        log_file = sys.argv[3]
+        logging.basicConfig(
+            format='%(asctime)s | %(levelname)s | %(message)s',
+            filename=log_file, level=logging.INFO)
     asyncio.run(main(sys.argv[1], sys.argv[2]))
