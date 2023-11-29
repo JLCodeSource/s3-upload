@@ -101,19 +101,20 @@ async def test_main():
     rand = str(uuid.uuid4().hex[:6])
     Path(source + rand).mkdir(exist_ok=True)
     status_file: str = "status"+rand+".json"
+    logger: str = "main"
     create_dir_structure(source + rand, 3, 2, 2)
     os.chdir(pwd)
 
     # Test
-    await s3.main(source + rand, status_file)
+    await s3.main(source + rand, status_file, 8)
 
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
         # Verify
-        files = s3.load_status(status_file)
+        files = s3.load_status(status_file, logger)
         for file, done in files.items():
             response = await s3.get_object_sha256(
-                client, bucket_name, file)
+                client, bucket_name, file, logger)
             assert (response.get("ResponseMetadata").get(
                     "HTTPStatusCode") == 200)
             assert (done == "Done")
@@ -130,10 +131,11 @@ class TestUpload:
     async def test_upload(self):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
+        logger = "worker-1"
         Path(source + rand).mkdir(exist_ok=True)
         # Path(tmp + rand).mkdir(exist_ok=True)
         create_dir_structure(source + rand, 1, 1, 1)
-        files: dict[str, str] = s3.get_local_files(source + rand)
+        files: dict[str, str] = s3.get_local_files(source + rand, logger)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
@@ -141,11 +143,11 @@ class TestUpload:
                 sha256: str = await s3.hash(file)
 
                 # Test
-                await s3.upload(client, bucket_name, file, sha256)
+                await s3.upload(client, bucket_name, file, sha256, logger)
 
                 # Verify
                 response = await s3.get_object_sha256(
-                    client, bucket_name, file)
+                    client, bucket_name, file, logger)
 
                 assert (response.get("ResponseMetadata").get(
                     "HTTPStatusCode") == 200)
@@ -172,20 +174,21 @@ class TestUpload:
     async def test_upload_exists(self):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
+        logger: str = "worker-1"
         Path(source+rand).mkdir(exist_ok=True)
         create_dir_structure(source+rand, 1, 1, 1)
-        files: dict[str, str] = s3.get_local_files(source+rand)
+        files: dict[str, str] = s3.get_local_files(source+rand, logger)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
 
             for file in files.keys():
                 sha256: str = await s3.hash(file)
-                await s3.upload(client, bucket_name, file, sha256)
+                await s3.upload(client, bucket_name, file, sha256, logger)
 
                 # Test
                 with pytest.raises(FileExistsError):
-                    await s3.upload(client, bucket_name, file, sha256)
+                    await s3.upload(client, bucket_name, file, sha256, logger)
 
         # Cleanup
         os.chdir(pwd)
@@ -198,21 +201,22 @@ class TestGetObjectSha:
     async def test_get_object_sha256(self):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
+        logger = "worker-1"
         Path(source+rand).mkdir(exist_ok=True)
         create_dir_structure(source+rand, 1, 1, 1)
 
-        files: dict[str, str] = s3.get_local_files(source+rand)
+        files: dict[str, str] = s3.get_local_files(source+rand, logger)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
 
             for file in files:
                 sha256: str = await s3.hash(file)
-                await s3.upload(client, bucket_name, file, sha256)
+                await s3.upload(client, bucket_name, file, sha256, logger)
 
                 # Test
                 head_object = await s3.get_object_sha256(
-                    client, bucket_name, file)
+                    client, bucket_name, file, logger)
 
                 # Verify
                 assert (head_object is not None)
@@ -225,21 +229,24 @@ class TestGetObjectSha:
 
     @pytest.mark.asyncio
     async def test_get_object_sha256_no_file(self):
+        logger = "worker-1"
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
             # Test
             with pytest.raises(exceptions.ClientError):
-                await s3.get_object_sha256(client, bucket_name, "not_a_file")
+                await s3.get_object_sha256(
+                    client, bucket_name, "not_a_file", logger)
 
 
 def test_get_local_files():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
+    logger = "main"
     Path(source+rand).mkdir(exist_ok=True)
     create_dir_structure(source+rand, 2, 3, 2)
 
     # Test
-    got_files: dict[str, str] = s3.get_local_files(source+rand)
+    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
 
     want_files: dict[str, str] = {}
     for root, _, files in os.walk(source+rand):
@@ -259,12 +266,13 @@ def test_get_local_files():
 async def test_set_hash():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
+    logger = "main"
     Path(source+rand).mkdir(exist_ok=True)
     create_dir_structure(source+rand, 2, 3, 2)
     status_file = "status" + rand + ".json"
 
     # Test
-    got_files: dict[str, str] = s3.get_local_files(source+rand)
+    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
     await s3.set_hash(got_files, status_file)
 
     want_files: dict[str, str] = {}
@@ -286,16 +294,17 @@ async def test_set_hash():
 async def test_status():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
+    logger = "main"
     Path(source+rand).mkdir(exist_ok=True)
     create_dir_structure(source+rand, 2, 3, 2)
     status_file: str = 'status'+rand+'.json'
 
-    got_files: dict[str, str] = s3.get_local_files(source+rand)
+    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
     await s3.set_hash(got_files, status_file)
 
     # Test Save Status
     os.chdir(pwd)
-    s3.save_status(got_files, status_file)
+    s3.save_status(got_files, status_file, logger)
 
     with open(status_file, 'r') as json_file:
         want_files: dict[str, str] = json.load(json_file)
@@ -305,7 +314,7 @@ async def test_status():
         assert (got_files[file] == want_files[file])
 
     # Test Load Status
-    got_files = s3.load_status(status_file)
+    got_files = s3.load_status(status_file, logger)
 
     # Verify
     for file in want_files:
@@ -321,17 +330,19 @@ class TestCheckStatus:
     def test_check_status_success(self):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
+        logger = "main"
         Path(source+rand).mkdir(exist_ok=True)
         create_dir_structure(source+rand, 2, 3, 2)
         status_file: str = 'status'+rand+'.json'
 
-        want_files: dict[str, str] = s3.get_local_files(source+rand)
+        want_files: dict[str, str] = s3.get_local_files(source+rand, logger)
 
         os.chdir(pwd)
-        s3.save_status(want_files, status_file)
+        s3.save_status(want_files, status_file, logger)
 
         # Test Check Status
-        got_files: dict[str, str] = s3.check_status(source+rand, status_file)
+        got_files: dict[str, str] = s3.check_status(
+            source+rand, status_file, logger)
 
         # Verify
 
@@ -351,12 +362,12 @@ class TestCheckStatus:
 async def test_add_files_to_queues():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
+    logger = "main"
     Path(source+rand).mkdir(exist_ok=True)
     create_dir_structure(source+rand, 2, 3, 2)
 
-    hash_q: asyncio.Queue[str] = asyncio.Queue()
-    upload_q: asyncio.Queue[str] = asyncio.Queue()
-    got_files: dict[str, str] = s3.get_local_files(source+rand)
+    queue: asyncio.Queue = asyncio.Queue()
+    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
 
     counter: int = 0
     # Make the values for (approx) 1/3rd of the files(keys) equal
@@ -377,13 +388,12 @@ async def test_add_files_to_queues():
     session: AioSession = get_session()
     async with session.create_client('s3') as _:
         await s3.add_files_to_queues(
-            got_files, hash_q, upload_q)
+            got_files, queue, logger)
 
     # Verify
-    # N.B. Dirty test to check that (approx) 1/3rd are in hash_q,
-    # 1/3rd are in upload_q & 1/3rd are Done
-    assert (hash_q.qsize() == 7)
-    assert (upload_q.qsize() == 7)
+    # N.B. Dirty test to check that (approx) 1/3rd are set as hashers,
+    # 1/3rd are set as uploaders & 1/3rd are Done
+    assert (queue.qsize() == 14)
     assert (sum(v == "Done" for v in got_files.values()) == 6)
 
     # Cleanup
