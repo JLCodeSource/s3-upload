@@ -74,14 +74,20 @@ async def hash(file: str) -> str:
     return digest
 
 
-def get_local_files(path: str) -> dict[str, str]:
-    logging.info("Getting local files")
+def get_local_files(path: str, max_size: int) -> dict[str, str]:
+    logging.info("Getting local files with max_size: {max_size}")
     file_out: dict[str, str] = {}
     for root, _, files in os.walk(path):
         for name in files:
             fullpath: str = os.path.join(root, name)
+            statinfo: os.stat_result = os.stat(fullpath)
+            if statinfo.st_size > max_size:
+                logging.info(
+                    f"File {fullpath} file_size {statinfo.st_size}"
+                    f"> max_size {max_size}; skipping ")
+                continue
             file_out[fullpath] = ""
-            logging.debug(f"Adding {fullpath} key with empty value")
+            logging.info(f"Adding {fullpath} key with empty value")
     return file_out
 
 
@@ -127,22 +133,22 @@ def load_status(status_file: str) -> dict[str, str]:
         raise
 
 
-def check_status(source, status_file) -> dict[str, str]:
+def check_status(source, status_file, max_size) -> dict[str, str]:
     files: dict[str, str] = {}
     try:
         files = load_status(status_file)
     except FileNotFoundError:
-        files = get_local_files(source)
+        files = get_local_files(source, max_size)
         save_status(files, status_file)
     return files
 
 
-async def main(source: str, status_file: str) -> None:
+async def main(source: str, status_file: str, max_size: int) -> None:
     logging.info('Started s3uploader')
     logging.info(f"Source set to {source}")
     logging.info(f"Status file set to {status_file}")
 
-    files: dict[str, str] = check_status(source, status_file)
+    files: dict[str, str] = check_status(source, status_file, max_size)
 
     await set_hash(files, status_file)
 
@@ -161,8 +167,8 @@ async def main(source: str, status_file: str) -> None:
 
 if __name__ == '__main__':
     default_log_file = 's3upload.log'
-    usage = "Usage: python s3.py source_dir status_file [log_file]"
-    if len(sys.argv) < 3:
+    usage = "Usage: python s3.py source_dir status_file max_size [log_file]"
+    if len(sys.argv) < 4:
         logging.basicConfig(
             format='%(asctime)s | %(levelname)s | %(message)s',
             filename=default_log_file, level=logging.INFO)
@@ -170,10 +176,16 @@ if __name__ == '__main__':
         logging.error(f"Missing arguments - {usage}")
         print(f"{usage}")
         sys.exit()
-    elif len(sys.argv) == 4:
-        log_file = sys.argv[3]
+    elif len(sys.argv) == 5:
+        log_file = sys.argv[4]
         logging.basicConfig(
             format='%(asctime)s | %(levelname)s | %(message)s',
             filename=log_file, level=logging.INFO)
 
-    asyncio.run(main(sys.argv[1], sys.argv[2]))
+    max_size = sys.argv[3]
+    if type(max_size) is not int:
+        logging.error(f"Wrong type for max_size - {usage}")
+        print(f"{usage}")
+        sys.exit()
+
+    asyncio.run(main(sys.argv[1], sys.argv[2], int(sys.argv[3])))
