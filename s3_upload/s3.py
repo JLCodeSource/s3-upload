@@ -21,18 +21,22 @@ async def upload(
         bucket: str,
         file: str,
         sha256: str) -> None:
+    # skip files that are done
     if sha256 == "Done":
         logging.info(f"File {file} already uploaded; skipping")
         return
+    # skip files that are suspect
     elif sha256 == "Suspect":
         logging.info(f"File {file} is suspect; skipping")
         return
     try:
         logging.info(
             f"Trying to upload object {file} to S3 with sha {sha256}")
+        # get_object_sha256 raises a ClientError if no file exists
         response = await get_object_sha256(client, bucket, file)
         if response.get("ChecksumSHA256") == sha256:
             raise FileExistsError
+    # if get_object_sha256 raises a ClientError upload file
     except exceptions.ClientError:
         with open(file, 'rb') as f:
             await client.put_object(
@@ -55,6 +59,7 @@ async def get_object_sha256(
             Key=file,
             ChecksumMode='ENABLED'
         )
+    # raise ClientError if object not found
     except exceptions.ClientError as err:
         logging.warning(f"Object {file} not found in S3; {err}")
         raise
@@ -73,6 +78,7 @@ async def hash(file: str) -> str:
                 if not data:
                     break
                 sha256.update(data)
+    # raise OSError for caller to handle if IO error
     except OSError as err:
         logging.error(f"File {file} raised OSError: {err}")
         raise
@@ -88,6 +94,7 @@ def get_local_files(path: str, max_size: int) -> dict[str, str]:
         for name in files:
             fullpath: str = os.path.join(root, name)
             statinfo: os.stat_result = os.stat(fullpath)
+            # check file size
             if statinfo.st_size > max_size:
                 logging.info(
                     f"File {fullpath} file_size {statinfo.st_size}"
@@ -105,6 +112,7 @@ async def set_hash(files: dict[str, str], status_file: str) -> None:
             continue
         try:
             sha256: str = await hash(file)
+        # tag files with IO Errors with Suspect
         except OSError:
             logging.info(f"File {file} raised OSError; tagging with 'suspect' & skipping")
             files[file] = "Suspect"
