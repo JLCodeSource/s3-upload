@@ -1,10 +1,8 @@
 import asyncio
 import base64
 import hashlib
-import shutil
 import uuid
 import os
-import random
 import json
 from pathlib import Path
 
@@ -13,9 +11,8 @@ from aiobotocore.session import (
 from types_aiobotocore_s3.client import S3Client
 from botocore import exceptions
 import pytest
-import unittest.mock as m
-import unittest
 
+import tests.test_helpers as test_helpers
 from s3_upload import s3
 
 MIN_FILE_SIZE = 1024
@@ -28,80 +25,6 @@ bucket_name = 'gb-upload'
 pwd: str = os.getcwd()
 source: str = os.path.join(pwd, 'source')
 
-
-async def download(client: S3Client,
-                   bucket: str, folder: str, file: str):
-    basename: str = os.path.basename(file)
-    path: str = os.getcwd()
-    os.chdir(folder)
-    response = await client.get_object(
-        Bucket=bucket,
-        Key=file,
-        ChecksumMode='ENABLED',
-    )
-    with open(basename, 'wb') as f:
-        for chunk in await response.get('Body').iter_chunks(
-                chunk_size=CHUNK_SIZE):
-            f.write(chunk)
-    os.chdir(path)
-    return response
-
-
-def create_temp_file(size, file_name):
-    random_file_name = file_name + "-" + str(uuid.uuid4().hex[:6])
-    with open(random_file_name, 'wb') as f:
-        f.write(os.urandom(size))
-    return random_file_name
-
-
-def create_temp_dir(parent):
-    random_dir_name = str(uuid.uuid4().hex[:6])
-    path = os.path.join(parent, random_dir_name)
-    os.mkdir(path)
-    return path
-
-
-def create_dir_structure(root, dirs, subs, files):
-    for i in range(dirs):
-        dir = create_temp_dir(root)
-        os.chdir(root)
-        file = "file{}".format(i)
-        create_temp_file(random.randrange(
-            MIN_FILE_SIZE, MAX_FILE_SIZE, 1), file)
-        for j in range(subs):
-            sub = create_temp_dir(dir)
-            path = os.path.join(root, dir)
-            os.chdir(path)
-            file = "file{}.{}".format(i, j)
-            create_temp_file(random.randrange(
-                MIN_FILE_SIZE, MAX_FILE_SIZE, 1), file)
-            for k in range(files):
-                path = os.path.join(root, dir, sub)
-                os.chdir(path)
-                file = "file{}.{}.{}".format(i, j, k)
-                create_temp_file(random.randrange(
-                    MIN_FILE_SIZE, MAX_FILE_SIZE, 1), file)
-
-
-async def clean_up_s3(client: S3Client, bucket: str, folder: str) -> None:
-    session: AioSession = get_session()
-    async with session.create_client('s3') as client:
-        objects_to_delete = await client.list_objects(
-            Bucket=bucket, Prefix=folder)
-
-        delete_keys = {'Objects': []}  # type: ignore
-        delete_keys['Objects'] = [
-            {'Key': k} for k in [
-                obj['Key'] for obj in objects_to_delete.get(  # type: ignore
-                    'Contents', [])]]  # type: ignore
-
-        await client.delete_objects(
-            Bucket=bucket, Delete=delete_keys)  # type: ignore
-
-
-def clean_up_dir(dir):
-    shutil.rmtree(dir)
-
 class TestMain:
     @pytest.mark.slow
     @pytest.mark.asyncio
@@ -110,7 +33,7 @@ class TestMain:
         rand = str(uuid.uuid4().hex[:6])
         Path(source + rand).mkdir(exist_ok=True)
         status_file: str = "status"+rand+".json"
-        create_dir_structure(source + rand, 3, 2, 2)
+        test_helpers.create_dir_structure(source + rand, 3, 2, 2)
         os.chdir(pwd)
 
         # Test
@@ -129,8 +52,8 @@ class TestMain:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source + rand)
-        await clean_up_s3(client, bucket_name, "/")
+        test_helpers.clean_up_dir(source + rand)
+        await test_helpers.clean_up_s3(client, bucket_name, "/")
         os.remove(status_file)
 
     @pytest.mark.asyncio
@@ -139,7 +62,7 @@ class TestMain:
         rand = str(uuid.uuid4().hex[:6])
         Path(source + rand).mkdir(exist_ok=True)
         status_file: str = "status"+rand+".json"
-        create_dir_structure(source + rand, 1, 1, 6)
+        test_helpers.create_dir_structure(source + rand, 1, 1, 6)
         os.chdir(pwd)
 
         files: dict[str, str] = s3.get_local_files(
@@ -187,8 +110,8 @@ class TestMain:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source + rand)
-        await clean_up_s3(client, bucket_name, "/")
+        test_helpers.clean_up_dir(source + rand)
+        await test_helpers.clean_up_s3(client, bucket_name, "/")
         os.remove(status_file)
 
 class TestUpload:
@@ -198,7 +121,7 @@ class TestUpload:
         rand = str(uuid.uuid4().hex[:6])
         Path(source + rand).mkdir(exist_ok=True)
         # Path(tmp + rand).mkdir(exist_ok=True)
-        create_dir_structure(source + rand, 1, 1, 1)
+        test_helpers.create_dir_structure(source + rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(
             source + rand, MAX_FILE_SIZE)
 
@@ -231,16 +154,16 @@ class TestUpload:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source + rand)
+        test_helpers.clean_up_dir(source + rand)
         # clean_up_dir(tmp + rand)
-        await clean_up_s3(client, bucket_name, "/")
+        await test_helpers.clean_up_s3(client, bucket_name, "/")
 
     @pytest.mark.asyncio
     async def test_upload_exists(self):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 1, 1, 1)
+        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(
             source+rand, MAX_FILE_SIZE)
 
@@ -257,8 +180,8 @@ class TestUpload:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source + rand)
-        await clean_up_s3(client, bucket_name, "/")
+        test_helpers.clean_up_dir(source + rand)
+        await test_helpers.clean_up_s3(client, bucket_name, "/")
 
 
     @pytest.mark.asyncio
@@ -266,7 +189,7 @@ class TestUpload:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 1, 1, 1)
+        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(
             source+rand, MAX_FILE_SIZE)
 
@@ -286,7 +209,7 @@ class TestUpload:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source + rand)
+        test_helpers.clean_up_dir(source + rand)
         #await clean_up_s3(client, bucket_name, "/")
 
 
@@ -296,7 +219,7 @@ class TestGetObjectSha:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 1, 1, 1)
+        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
 
         files: dict[str, str] = s3.get_local_files(
             source+rand, MAX_FILE_SIZE)
@@ -318,8 +241,8 @@ class TestGetObjectSha:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source+rand)
-        await clean_up_s3(client, bucket_name, "/")
+        test_helpers.clean_up_dir(source+rand)
+        await test_helpers.clean_up_s3(client, bucket_name, "/")
 
     @pytest.mark.asyncio
     async def test_get_object_sha256_no_file(self):
@@ -334,7 +257,7 @@ class TestGetLocalFiles:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 2, 3, 2)
+        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
 
         # Test
         got_files: dict[str, str] = s3.get_local_files(
@@ -351,13 +274,13 @@ class TestGetLocalFiles:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source+rand)
+        test_helpers.clean_up_dir(source+rand)
 
     def test_get_local_files_max_size(self):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 2, 3, 2)
+        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
         max_size: int = round(MAX_FILE_SIZE/2)
 
         # Test
@@ -381,7 +304,7 @@ class TestGetLocalFiles:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source+rand)
+        test_helpers.clean_up_dir(source+rand)
 
 class TestHash:
     @pytest.mark.asyncio
@@ -389,7 +312,7 @@ class TestHash:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 1, 1, 1)
+        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
         files: dict[str, str] = s3.get_local_files(
             source+rand, MAX_FILE_SIZE)
 
@@ -410,14 +333,14 @@ class TestHash:
         assert(got_hash == want_hash)
         
         os.chdir(pwd)
-        clean_up_dir(source+rand)
+        test_helpers.clean_up_dir(source+rand)
 
     @pytest.mark.asyncio
     async def test_hash_os_error(self, monkeypatch):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 2, 2, 2)
+        test_helpers.create_dir_structure(source+rand, 2, 2, 2)
         files: dict[str, str] = s3.get_local_files(
             source+rand, MAX_FILE_SIZE)
         file: str = list(files.keys())[0]
@@ -441,7 +364,7 @@ class TestSetHash:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 2, 3, 2)
+        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
         status_file = "status" + rand + ".json"
 
         # Test
@@ -461,7 +384,7 @@ class TestSetHash:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source+rand)
+        test_helpers.clean_up_dir(source+rand)
 
 
     @pytest.mark.asyncio
@@ -469,7 +392,7 @@ class TestSetHash:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 2, 2, 2)
+        test_helpers.create_dir_structure(source+rand, 2, 2, 2)
         status_file: str = "status" + rand + ".json"
 
         files: dict[str, str] = s3.get_local_files(
@@ -489,7 +412,7 @@ class TestSetHash:
 
         # Cleanup
         os.chdir(pwd)
-        clean_up_dir(source+rand)
+        test_helpers.clean_up_dir(source+rand)
 
 
 @pytest.mark.asyncio
@@ -497,7 +420,7 @@ async def test_status():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
     Path(source+rand).mkdir(exist_ok=True)
-    create_dir_structure(source+rand, 2, 3, 2)
+    test_helpers.create_dir_structure(source+rand, 2, 3, 2)
     status_file: str = 'status'+rand+'.json'
 
     got_files: dict[str, str] = s3.get_local_files(
@@ -525,7 +448,7 @@ async def test_status():
     # Cleanup
     os.chdir(pwd)
     os.remove(status_file)
-    clean_up_dir(source+rand)
+    test_helpers.clean_up_dir(source+rand)
 
 
 class TestCheckStatus:
@@ -533,7 +456,7 @@ class TestCheckStatus:
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 2, 3, 2)
+        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
         status_file: str = 'status'+rand+'.json'
 
         want_files: dict[str, str] = s3.get_local_files(
@@ -554,7 +477,7 @@ class TestCheckStatus:
         # Cleanup
         os.chdir(pwd)
         os.remove(status_file)
-        clean_up_dir(source+rand)
+        test_helpers.clean_up_dir(source+rand)
 
     def test_check_status_FileNotFound(self):
         pass
@@ -565,7 +488,7 @@ async def test_add_files_to_queues():
     # Setup
     rand = str(uuid.uuid4().hex[:6])
     Path(source+rand).mkdir(exist_ok=True)
-    create_dir_structure(source+rand, 2, 3, 2)
+    test_helpers.create_dir_structure(source+rand, 2, 3, 2)
 
     hash_q: asyncio.Queue[str] = asyncio.Queue()
     upload_q: asyncio.Queue[str] = asyncio.Queue()
@@ -604,4 +527,4 @@ async def test_add_files_to_queues():
 
     # Cleanup
     os.chdir(pwd)
-    clean_up_dir(source+rand)
+    test_helpers.clean_up_dir(source+rand)
