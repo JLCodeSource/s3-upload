@@ -8,12 +8,14 @@ import random
 import json
 from pathlib import Path
 
-
 from aiobotocore.session import (
     get_session, AioSession)
 from types_aiobotocore_s3.client import S3Client
 from botocore import exceptions
 import pytest
+import unittest.mock as m
+import unittest
+
 from s3_upload import s3
 
 MIN_FILE_SIZE = 1024
@@ -201,57 +203,6 @@ class TestUpload:
         clean_up_dir(source + rand)
         await clean_up_s3(client, bucket_name, "/")
 
-class TestHash:
-    @pytest.mark.asyncio
-    async def test_hash_success(self):
-        # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 1, 1, 1)
-        files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
-
-        # Test
-        file: str = list(files.keys())[0]
-        got_hash: str = await s3.hash(file)
-        
-        # Verify
-        sha256: hashlib._Hash = hashlib.sha256()
-        with open(file, 'rb') as f:
-            while True:
-                data: bytes = f.read(s3.BUF_SIZE)
-                if not data:
-                    break
-                sha256.update(data)
-        want_hash: str = base64.b64encode(sha256.digest()).decode()
-        
-        assert(got_hash == want_hash)
-        
-        os.chdir(pwd)
-        clean_up_dir(source+rand)
-
-    @pytest.mark.asyncio
-    async def test_hash_os_error(self, monkeypatch):
-        # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        create_dir_structure(source+rand, 1, 1, 1)
-        files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
-        file: str = list(files.keys())[0]
-        
-        # mock
-        def mock_sha256():
-            raise OSError
-
-        monkeypatch.setattr(hashlib, "sha256", mock_sha256)
-
-        # Test
-        with pytest.raises(OSError):
-            await s3.hash(file)
-
-
-
 class TestGetObjectSha:
     @pytest.mark.asyncio
     async def test_get_object_sha256(self):
@@ -345,33 +296,114 @@ class TestGetLocalFiles:
         os.chdir(pwd)
         clean_up_dir(source+rand)
 
+class TestHash:
+    @pytest.mark.asyncio
+    async def test_hash_success(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 1, 1, 1)
+        files: dict[str, str] = s3.get_local_files(
+            source+rand, MAX_FILE_SIZE)
 
-@pytest.mark.asyncio
-async def test_set_hash():
-    # Setup
-    rand = str(uuid.uuid4().hex[:6])
-    Path(source+rand).mkdir(exist_ok=True)
-    create_dir_structure(source+rand, 2, 3, 2)
-    status_file = "status" + rand + ".json"
+        # Test
+        file: str = list(files.keys())[0]
+        got_hash: str = await s3.hash(file)
+        
+        # Verify
+        sha256: hashlib._Hash = hashlib.sha256()
+        with open(file, 'rb') as f:
+            while True:
+                data: bytes = f.read(s3.BUF_SIZE)
+                if not data:
+                    break
+                sha256.update(data)
+        want_hash: str = base64.b64encode(sha256.digest()).decode()
+        
+        assert(got_hash == want_hash)
+        
+        os.chdir(pwd)
+        clean_up_dir(source+rand)
 
-    # Test
-    got_files: dict[str, str] = s3.get_local_files(
-        source+rand, MAX_FILE_SIZE)
-    await s3.set_hash(got_files, status_file)
+    @pytest.mark.asyncio
+    async def test_hash_os_error(self, monkeypatch):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 2, 2, 2)
+        files: dict[str, str] = s3.get_local_files(
+            source+rand, MAX_FILE_SIZE)
+        file: str = list(files.keys())[0]
+        
+        # mock
+        def mock_sha256():
+            raise OSError
+        
+        monkeypatch.setattr(hashlib, "sha256", mock_sha256)
 
-    want_files: dict[str, str] = {}
-    for root, _, files in os.walk(source+rand):
-        for name in files:
-            file: str = os.path.join(root, name)
-            want_files[file] = await s3.hash(file)
+        # Test
+        with pytest.raises(OSError):
+            await s3.hash(file)
 
-    # Verify
-    for file in got_files:
-        assert (got_files[file] == want_files[file])
 
-    # Cleanup
-    os.chdir(pwd)
-    clean_up_dir(source+rand)
+
+
+class TestSetHash:
+
+    @pytest.mark.asyncio
+    async def test_set_hash_success(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 2, 3, 2)
+        status_file = "status" + rand + ".json"
+
+        # Test
+        got_files: dict[str, str] = s3.get_local_files(
+            source+rand, MAX_FILE_SIZE)
+        await s3.set_hash(got_files, status_file)
+
+        want_files: dict[str, str] = {}
+        for root, _, files in os.walk(source+rand):
+            for name in files:
+                file: str = os.path.join(root, name)
+                want_files[file] = await s3.hash(file)
+
+        # Verify
+        for file in got_files:
+            assert (got_files[file] == want_files[file])
+
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source+rand)
+
+
+    @pytest.mark.asyncio
+    async def test_set_hash_os_error(self, monkeypatch):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 2, 2, 2)
+        status_file: str = "status" + rand + ".json"
+
+        files: dict[str, str] = s3.get_local_files(
+            source+rand, MAX_FILE_SIZE)
+
+        # mock
+        async def mock_hash(file):
+            raise OSError
+
+        monkeypatch.setattr(s3, "hash", mock_hash)
+
+        # Test
+        await s3.set_hash(files, status_file)
+        # Verify
+        for file in files.values():
+            assert(file == "Suspect")
+
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source+rand)
 
 
 @pytest.mark.asyncio
