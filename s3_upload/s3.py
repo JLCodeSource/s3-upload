@@ -20,22 +20,25 @@ async def upload(
         client: S3Client,
         bucket: str,
         file: str,
-        sha256: str) -> None:
+        status: str) -> str:
     # skip files that are done
-    if sha256 == "Done":
+    if status == "Done":
         logging.info(f"File {file} already uploaded; skipping")
-        return
+        return status
     # skip files that are suspect
-    elif sha256 == "Suspect":
+    elif status == "Suspect":
         logging.info(f"File {file} is suspect; skipping")
-        return
+        return status
     try:
         logging.info(
-            f"Trying to upload object {file} to S3 with sha {sha256}")
+            f"Trying to upload object {file} to S3 with sha256 {status}")
         # get_object_sha256 raises a ClientError if no file exists
         response = await get_object_sha256(client, bucket, file)
-        if response.get("ChecksumSHA256") == sha256:
+        if response.get("ChecksumSHA256") == status:
             raise FileExistsError
+        # If the FileExists we raise above & if not, 
+        # we get a ClientError from get_object_sha256 & handle below 
+        return "Should Not Occur"
     # if get_object_sha256 raises a ClientError upload file
     except exceptions.ClientError:
         with open(file, 'rb') as f:
@@ -44,10 +47,11 @@ async def upload(
                 Body=f,
                 Key=file,
                 ChecksumAlgorithm='SHA256',
-                ChecksumSHA256=sha256)
+                ChecksumSHA256=status)
             logging.info(
-                f"File {file} successfully uploaded to S3 with sha {sha256}"
+                f"File {file} successfully uploaded to S3 with sha256 {status}"
             )
+        return "Done"
 
 
 async def get_object_sha256(
@@ -61,7 +65,7 @@ async def get_object_sha256(
         )
     # raise ClientError if object not found
     except exceptions.ClientError as err:
-        logging.warning(f"Object {file} not found in S3; {err}")
+        logging.info(f"Object {file} not found in S3; {err}")
         raise
     sha256: str = response.get("ChecksumSHA256")
     logging.info(f"Object {file} sha256: {sha256}")
@@ -137,7 +141,7 @@ async def add_files_to_queues(
             logging.info(f"File {file} is suspect; skipping")
             continue
         else:
-            logging.debug(f"Adding file {file} to upload queue")
+            logging.info(f"Adding file {file} to upload queue")
             await upload_q.put(file)
 
 
@@ -177,12 +181,13 @@ async def main(source: str, status_file: str, max_size: int) -> None:
 
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
-        for file, sha256 in files.items():
+        for file, status in files.items():
+            new_status = ""
             try:
-                await upload(client, bucket_name, file, sha256)
+                new_status: str = await upload(client, bucket_name, file, status)
             except FileExistsError:
                 logging.info(f"File {file} already exists in S3; skipping")
-            files[file] = "Done"
+            files[file] = new_status
             save_status(files, status_file)
 
     logging.info('Finished s3uploader')
