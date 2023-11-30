@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import random
 import shutil
 import uuid
@@ -8,6 +9,10 @@ from aiobotocore.session import (
 from types_aiobotocore_s3.client import S3Client
 
 import tests.test_s3 as test_s3
+
+# Test settings
+pwd: str = os.getcwd()
+source: str = os.path.join(pwd, 'source')
 
 async def download(client: S3Client,
                    bucket: str, folder: str, file: str):
@@ -80,3 +85,27 @@ async def clean_up_s3(client: S3Client, bucket: str, folder: str) -> None:
 
 def clean_up_dir(dir):
     shutil.rmtree(dir)
+
+
+def setup(fixtures: dict[str, bool | tuple]) -> tuple[str, str | None]:
+    
+    rand = str(uuid.uuid4().hex[:6])
+    path: str = source + rand 
+    Path(path).mkdir(exist_ok=True)
+    if fixtures["status_file"] == True:
+        status_file: str | None = "status"+rand+".json"
+    else:
+        status_file = None
+    dirs: int = 0
+    subs: int = 0
+    files: int = 0
+    if type(fixtures["dirs"]) == tuple:
+        dirs, subs, files = fixtures["dirs"]
+    else:
+        raise ValueError("missing fixtures for dirs")
+    
+    create_dir_structure(path, dirs, subs, files)
+    os.chdir(pwd)
+
+    return path, status_file
+    
