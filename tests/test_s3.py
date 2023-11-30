@@ -132,7 +132,7 @@ class TestUpload:
                 sha256: str = await s3.hash(file)
 
                 # Test
-                await s3.upload(client, bucket_name, file, sha256)
+                await s3.gen_upload(client, bucket_name, file, sha256)
 
                 # Verify
                 response = await s3.get_object_sha256(
@@ -178,11 +178,11 @@ class TestUpload:
 
             for file in files.keys():
                 sha256: str = await s3.hash(file)
-                await s3.upload(client, bucket_name, file, sha256)
+                await s3.gen_upload(client, bucket_name, file, sha256)
 
                 # Test
                 with pytest.raises(FileExistsError):
-                    await s3.upload(client, bucket_name, file, sha256)
+                    await s3.gen_upload(client, bucket_name, file, sha256)
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -212,7 +212,7 @@ class TestUpload:
             # Test
             for file in files.keys():
                 sha256: str = "Suspect"
-                await s3.upload(client, bucket_name, file, sha256)
+                await s3.gen_upload(client, bucket_name, file, sha256)
 
         # Verify
         for file in files.values():
@@ -243,7 +243,7 @@ class TestGetObjectSha:
 
             for file in files:
                 sha256: str = await s3.hash(file)
-                await s3.upload(client, bucket_name, file, sha256)
+                await s3.gen_upload(client, bucket_name, file, sha256)
 
                 # Test
                 head_object = await s3.get_object_sha256(
@@ -410,7 +410,7 @@ class TestSetHash:
         # Test
         got_files: dict[str, str] = s3.get_local_files(
             source, MAX_FILE_SIZE)
-        await s3.set_hash(got_files, str(status_file))
+        await s3.gen_hash(got_files, str(status_file))
 
         want_files: dict[str, str] = {}
         for root, _, files in os.walk(source):
@@ -450,7 +450,7 @@ class TestSetHash:
         monkeypatch.setattr(s3, "hash", mock_hash)
 
         # Test
-        await s3.set_hash(files, str(status_file))
+        await s3.gen_hash(files, str(status_file))
         # Verify
         for file in files.values():
             assert(file == "Suspect")
@@ -474,7 +474,7 @@ async def test_status():
 
     got_files: dict[str, str] = s3.get_local_files(
         source, MAX_FILE_SIZE)
-    await s3.set_hash(got_files, str(status_file))
+    await s3.gen_hash(got_files, str(status_file))
 
     # Test Save Status
     os.chdir(test_helpers.pwd)

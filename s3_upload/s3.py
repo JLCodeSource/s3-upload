@@ -6,52 +6,60 @@ import hashlib
 import base64
 import sys
 
+from itertools import chain
+from typing import Any, AsyncGenerator, Generator
+
+from botocore import exceptions
+
 from aiobotocore.session import (
     get_session, AioSession)
 from types_aiobotocore_s3.client import S3Client
 
-from botocore import exceptions
+from aiostream import stream
+
 
 BUF_SIZE = 65536
 bucket_name = 'gb-upload'
 
 
-async def upload(
+async def gen_upload(
         client: S3Client,
         bucket: str,
-        file: str,
-        status: str) -> str:
-    # skip files that are done
-    if status == "Done":
-        logging.info(f"File {file} already uploaded; skipping")
-        return status
-    # skip files that are suspect
-    elif status == "Suspect":
-        logging.info(f"File {file} is suspect; skipping")
-        return status
-    try:
-        logging.info(
-            f"Trying to upload object {file} to S3 with sha256 {status}")
-        # get_object_sha256 raises a ClientError if no file exists
-        response = await get_object_sha256(client, bucket, file)
-        if response.get("ChecksumSHA256") == status:
-            raise FileExistsError
-        # If the FileExists we raise above & if not, 
-        # we get a ClientError from get_object_sha256 & handle below 
-        return "Should Not Occur"
-    # if get_object_sha256 raises a ClientError upload file
-    except exceptions.ClientError:
-        with open(file, 'rb') as f:
-            await client.put_object(
-                Bucket=bucket,
-                Body=f,
-                Key=file,
-                ChecksumAlgorithm='SHA256',
-                ChecksumSHA256=status)
+        files: dict[str, str],
+        status_file: str) -> AsyncGenerator[tuple[str, str], Any]:
+    for file, status in files:
+        # skip files that are done
+        if status == "Done":
+            logging.info(f"File {file} already uploaded; skipping")
+            continue
+        # skip files that are suspect
+        elif status == "Suspect":
+            logging.info(f"File {file} is suspect; skipping")
+            continue
+        try:
             logging.info(
-                f"File {file} successfully uploaded to S3 with sha256 {status}"
-            )
-        return "Done"
+                f"Trying to upload object {file} to S3 with sha256 {status}")
+            # get_object_sha256 raises a ClientError if no file exists
+            response = await get_object_sha256(client, bucket, file)
+            if response.get("ChecksumSHA256") == status:
+                raise FileExistsError
+            # If the FileExists we raise above & if not, 
+            # we get a ClientError from get_object_sha256 & handle below
+            # so this should not occur 
+            continue
+        # if get_object_sha256 raises a ClientError upload file
+        except exceptions.ClientError:
+            with open(file, 'rb') as f:
+                await client.put_object(
+                    Bucket=bucket,
+                    Body=f,
+                    Key=file,
+                    ChecksumAlgorithm='SHA256',
+                    ChecksumSHA256=status)
+                logging.info(
+                    f"File {file} successfully uploaded to S3 with sha256 {status}"
+                )
+            yield file, "Done"
 
 
 async def get_object_sha256(
@@ -109,21 +117,24 @@ def get_local_files(path: str, max_size: int) -> dict[str, str]:
     return file_out
 
 
-async def set_hash(files: dict[str, str], status_file: str) -> None:
-    for file, state in files.items():
-        if state != "":
-            logging.info(f"File {file} has already been hashed; skipping")
+async def gen_hash(files: dict[str, str], status_file: str) -> AsyncGenerator[tuple[str, str], Any]:
+    for file, status in files.items():
+        if status == "Done":
+            logging.info(f"File {file} already uploaded; skipping")
             continue
-        try:
-            sha256: str = await hash(file)
-        # tag files with IO Errors with Suspect
-        except OSError:
-            logging.info(f"File {file} raised OSError; tagging with 'suspect' & skipping")
-            files[file] = "Suspect"
+        elif status == "Suspect":
+            logging.info(f"File {file} is suspect; skipping")
             continue
-        logging.info(f"Updating {file} key with value {sha256}")
-        files[file] = sha256
-        save_status(files, status_file)
+        elif status == "":
+            try:
+                sha256: str = await hash(file)
+            # tag files with IO Errors with Suspect
+            except OSError:
+                logging.info(f"File {file} raised OSError; tagging with 'suspect' & skipping")
+                files[file] = "Suspect"
+                continue
+            yield file, sha256
+            
 
 
 async def add_files_to_queues(
@@ -170,6 +181,34 @@ def check_status(source, status_file, max_size) -> dict[str, str]:
     return files
 
 
+async def generators(
+        files: dict[str, str], client: S3Client, bucket: str, status_file: str):
+    merged_gens = stream.combine.merge(
+            gen_hash(files, status_file), 
+            gen_upload(client, bucket, files, status_file))
+
+    async with merged_gens.stream() as streamer:
+        files_iter = streamer.__aiter__()
+        async for file, status in files_iter:
+            if status == "Done":                
+                logging.info(f"File {file} already uploaded; skipping")
+                files[file] = status
+                save_status(files, status_file)
+            elif status == "Suspect":
+                logging.info(f"File {file} is suspect; skipping")
+                files[file] = status
+                save_status(files, status_file)
+            elif status != "":
+                logging.info(f"File {file} has been hashed with sha256 {status}")
+                files[file] = status
+                save_status(files, status_file)
+            else:
+                logging.info(f"Updating {file} key with value {status}")
+                files[file] = status
+                save_status(files, status_file)
+            
+
+
 async def main(source: str, status_file: str, max_size: int) -> None:
     logging.info('Started s3uploader')
     logging.info(f"Source set to {source}")
@@ -177,18 +216,9 @@ async def main(source: str, status_file: str, max_size: int) -> None:
 
     files: dict[str, str] = check_status(source, status_file, max_size)
 
-    await set_hash(files, status_file)
-
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
-        for file, status in files.items():
-            new_status = ""
-            try:
-                new_status: str = await upload(client, bucket_name, file, status)
-            except FileExistsError:
-                logging.info(f"File {file} already exists in S3; skipping")
-            files[file] = new_status
-            save_status(files, status_file)
+        await generators(files, client, bucket_name, status_file)
 
     logging.info('Finished s3uploader')
 
