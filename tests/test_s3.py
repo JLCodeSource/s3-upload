@@ -1,10 +1,13 @@
 import asyncio
+import base64
+import hashlib
 import shutil
 import uuid
 import os
 import random
 import json
 from pathlib import Path
+
 
 from aiobotocore.session import (
     get_session, AioSession)
@@ -198,6 +201,56 @@ class TestUpload:
         clean_up_dir(source + rand)
         await clean_up_s3(client, bucket_name, "/")
 
+class TestHash:
+    @pytest.mark.asyncio
+    async def test_hash_success(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 1, 1, 1)
+        files: dict[str, str] = s3.get_local_files(
+            source+rand, MAX_FILE_SIZE)
+
+        # Test
+        file: str = list(files.keys())[0]
+        got_hash: str = await s3.hash(file)
+        
+        # Verify
+        sha256: hashlib._Hash = hashlib.sha256()
+        with open(file, 'rb') as f:
+            while True:
+                data: bytes = f.read(s3.BUF_SIZE)
+                if not data:
+                    break
+                sha256.update(data)
+        want_hash: str = base64.b64encode(sha256.digest()).decode()
+        
+        assert(got_hash == want_hash)
+        
+        os.chdir(pwd)
+        clean_up_dir(source+rand)
+
+    @pytest.mark.asyncio
+    async def test_hash_os_error(self, monkeypatch):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 1, 1, 1)
+        files: dict[str, str] = s3.get_local_files(
+            source+rand, MAX_FILE_SIZE)
+        file: str = list(files.keys())[0]
+        
+        # mock
+        def mock_sha256():
+            raise OSError
+
+        monkeypatch.setattr(hashlib, "sha256", mock_sha256)
+
+        # Test
+        with pytest.raises(OSError):
+            await s3.hash(file)
+
+
 
 class TestGetObjectSha:
     @pytest.mark.asyncio
@@ -237,7 +290,6 @@ class TestGetObjectSha:
             # Test
             with pytest.raises(exceptions.ClientError):
                 await s3.get_object_sha256(client, bucket_name, "not_a_file")
-
 
 class TestGetLocalFiles:
     def test_get_local_files(self):
