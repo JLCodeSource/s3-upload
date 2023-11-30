@@ -24,9 +24,9 @@ async def upload(
     if sha256 == "Done":
         logging.info(f"File {file} already uploaded; skipping")
         return
-    #elif sha256 == "Suspect":
-    #    logging.info(f"File {file} is suspect; skipping")
-    #    return
+    elif sha256 == "Suspect":
+        logging.info(f"File {file} is suspect; skipping")
+        return
     try:
         logging.info(
             f"Trying to upload object {file} to S3 with sha {sha256}")
