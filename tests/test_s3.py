@@ -467,7 +467,7 @@ class TestSetHash:
 async def test_status():
     # Setup
     fixtures: dict[str, bool | tuple] = {
-            "status_file" : False,
+            "status_file" : True,
             "dirs" : (2, 3, 2)
         }
     source, status_file = test_helpers.setup(fixtures)
