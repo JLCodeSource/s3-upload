@@ -517,20 +517,21 @@ async def test_add_files_to_queues():
         source+rand, MAX_FILE_SIZE)
 
     counter: int = 0
-    # Make the values for (approx) 1/3rd of the files(keys) equal
-    # to a '' (i.e. continue), 1/3rd a random uuid string &
-    # 1/3rd, Done.
+    # Make the values for 1/4th of the files(keys) equal
+    # to a '' & 1/4th "Suspect" (i.e. both continue), 
+    # 1/4th a random uuid string & 1/4th, Done.
     # This way we can check the add_files_to_queues logic
     for file, _ in got_files.items():
-        if counter % 3 == 0:
+        if counter % 4 == 0:
             got_files[file] = str(uuid.uuid4())
-        elif counter % 3 == 1:
+        elif counter % 4 == 1:
             counter = counter + 1
             continue
+        elif counter % 4 == 2:
+            got_files[file] = "Suspect"
         else:
             got_files[file] = "Done"
         counter = counter + 1
-
     # Test
     session: AioSession = get_session()
     async with session.create_client('s3') as _:
@@ -538,11 +539,12 @@ async def test_add_files_to_queues():
             got_files, hash_q, upload_q)
 
     # Verify
-    # N.B. Dirty test to check that (approx) 1/3rd are in hash_q,
-    # 1/3rd are in upload_q & 1/3rd are Done
-    assert (hash_q.qsize() == 7)
-    assert (upload_q.qsize() == 7)
-    assert (sum(v == "Done" for v in got_files.values()) == 6)
+    # N.B. Dirty test to check that 1/4th are in hash_q,
+    # 1/4th are in upload_q & 1/4th are Done & Suspect
+    assert (hash_q.qsize() == 5)
+    assert (upload_q.qsize() == 5)
+    assert (sum(v == "Done" for v in got_files.values()) == 5)
+    assert (sum(v == "Suspect" for v in got_files.values()) == 5) 
 
     # Cleanup
     os.chdir(pwd)

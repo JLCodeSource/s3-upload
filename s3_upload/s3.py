@@ -125,9 +125,9 @@ async def add_files_to_queues(
         elif state == "Done":
             logging.info(f"File {file} is already done")
             continue
-        #elif state == "Suspect":
-        #    logging.info(f"File {file} is suspect; skipping")
-        #    continue
+        elif state == "Suspect":
+            logging.info(f"File {file} is suspect; skipping")
+            continue
         else:
             logging.debug(f"Adding file {file} to upload queue")
             await upload_q.put(file)
