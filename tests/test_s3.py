@@ -102,37 +102,94 @@ async def clean_up_s3(client: S3Client, bucket: str, folder: str) -> None:
 def clean_up_dir(dir):
     shutil.rmtree(dir)
 
+class TestMain:
+    @pytest.mark.slow
+    @pytest.mark.asyncio
+    async def test_main(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source + rand).mkdir(exist_ok=True)
+        status_file: str = "status"+rand+".json"
+        create_dir_structure(source + rand, 3, 2, 2)
+        os.chdir(pwd)
 
-@pytest.mark.slow
-@pytest.mark.asyncio
-async def test_main():
-    # Setup
-    rand = str(uuid.uuid4().hex[:6])
-    Path(source + rand).mkdir(exist_ok=True)
-    status_file: str = "status"+rand+".json"
-    create_dir_structure(source + rand, 3, 2, 2)
-    os.chdir(pwd)
+        # Test
+        await s3.main(source + rand, status_file, MAX_FILE_SIZE)
 
-    # Test
-    await s3.main(source + rand, status_file, MAX_FILE_SIZE)
+        session: AioSession = get_session()
+        async with session.create_client('s3') as client:
+            # Verify
+            files = s3.load_status(status_file)
+            for file, done in files.items():
+                response = await s3.get_object_sha256(
+                    client, bucket_name, file)
+                assert (response.get("ResponseMetadata").get(
+                        "HTTPStatusCode") == 200)
+                assert (done == "Done")
 
-    session: AioSession = get_session()
-    async with session.create_client('s3') as client:
-        # Verify
-        files = s3.load_status(status_file)
-        for file, done in files.items():
-            response = await s3.get_object_sha256(
-                client, bucket_name, file)
-            assert (response.get("ResponseMetadata").get(
-                    "HTTPStatusCode") == 200)
-            assert (done == "Done")
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source + rand)
+        await clean_up_s3(client, bucket_name, "/")
+        os.remove(status_file)
 
-    # Cleanup
-    os.chdir(pwd)
-    clean_up_dir(source + rand)
-    await clean_up_s3(client, bucket_name, "/")
-    os.remove(status_file)
+    @pytest.mark.asyncio
+    async def test_main_staus_file(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source + rand).mkdir(exist_ok=True)
+        status_file: str = "status"+rand+".json"
+        create_dir_structure(source + rand, 1, 1, 6)
+        os.chdir(pwd)
 
+        files: dict[str, str] = s3.get_local_files(
+            source + rand, MAX_FILE_SIZE)
+        
+        # Set 1/4 hash, 1/4 "", 1/4 Suspect, 1/4 Done 
+        counter: int = 0
+        for file in files.keys():
+            if counter % 4 == 0:
+                files[file] = await s3.hash(file)
+            elif counter % 4 == 1:
+                counter = counter + 1
+                continue
+            elif counter % 4 == 2:
+                files[file] = "Suspect"
+            else:
+                files[file] = "Done"
+            counter = counter + 1
+
+        s3.save_status(files, status_file)
+
+        # Test
+        await s3.main(source + rand, status_file, MAX_FILE_SIZE)
+
+        session: AioSession = get_session()
+        async with session.create_client('s3') as client:
+            # Verify
+            files = s3.load_status(status_file)
+            counter = 0
+            for file, status in files.items():
+                if counter % 4 == 2:
+                    assert (status == "Suspect")
+                    counter = counter + 1
+                    continue
+                if counter % 4 == 3:
+                    assert (status == "Done")
+                    counter = counter + 1
+                    continue
+                response = await s3.get_object_sha256(
+                    client, bucket_name, file)
+                assert (response.get("ResponseMetadata").get(
+                        "HTTPStatusCode") == 200)
+                assert (status == "Done")
+                counter = counter + 1
+
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source + rand)
+        await clean_up_s3(client, bucket_name, "/")
+        os.remove(status_file)
 
 class TestUpload:
     @pytest.mark.asyncio
@@ -379,7 +436,6 @@ class TestHash:
 
 
 class TestSetHash:
-
     @pytest.mark.asyncio
     async def test_set_hash_success(self):
         # Setup
