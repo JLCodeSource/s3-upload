@@ -5,6 +5,7 @@ import os
 import hashlib
 import base64
 import sys
+from typing import Any, Union
 
 from aiobotocore.session import (
     get_session, AioSession)
@@ -14,7 +15,8 @@ from botocore import exceptions
 
 BUF_SIZE = 65536
 bucket_name = 'gb-upload'
-
+Status_Details = dict[str, int|str] 
+Status = dict[str, Status_Details]
 
 async def worker(
         client: S3Client,
@@ -133,7 +135,30 @@ async def hash(file: str) -> str:
     return digest
 
 
-async def set_hash(files, status_file):
+def get_local_status(path: str, max_size: int) -> Status:
+    logging.info(f"Getting local status with path:{path} & max_size: {max_size}")
+    conf: Status_Details = { "max_file_size" : max_size }
+    files: Status_Details = {}
+    status_out: Status = {
+        "conf" : conf,
+        "files" : files,
+    }
+    for root, _, walk_files in os.walk(path):
+        for name in walk_files:
+            fullpath: str = os.path.join(root, name)
+            statinfo: os.stat_result = os.stat(fullpath)
+            if statinfo.st_size > max_size:
+                logging.info(
+                    f"File {fullpath} file_size {statinfo.st_size}"
+                    f"> max_size {max_size}; skipping ")
+                continue
+            files[fullpath] = ""
+            logging.info(f"Adding {fullpath} key with empty value")
+    return status_out
+
+
+async def set_hash(status: Status, status_file: str) -> None:
+    files: Status_Details = status["files"]
     for file, state in files.items():
         if state != "":
             logging.info(f"File {file} has already been hashed, skipping")
@@ -188,7 +213,7 @@ async def add_files_to_queues(
             await queue.put((file, state, uploader))
 
 
-def save_status(files: dict[str, str], status_file: str, logger: str) -> None:
+def save_status(files: Status_Details, status_file: str) -> None:
     with open(status_file, 'w') as f:
         f.write(json.dumps(files, indent=2))
         logging.info(f"{logger} | Writing status to {status_file}")
@@ -208,8 +233,8 @@ def check_status(source, status_file, logger) -> dict[str, str]:
     try:
         files = load_status(status_file, logger)
     except FileNotFoundError:
-        files = get_local_files(source, logger)
-        save_status(files, status_file, logger)
+        files = get_local_status(source, max_size)
+        save_status(files, status_file)
     return files
 
 
@@ -226,11 +251,8 @@ async def main(
     logging.info(f"{logger} | Source set to {source}")
     logging.info(f"{logger} | Status file set to {status_file}")
 
-    queue: asyncio.Queue = asyncio.Queue()
+    files: dict[str, str] = check_status(source, status_file, max_size)
 
-    files: dict[str, str] = check_status(source, status_file, logger)
-
-    await add_files_to_queues(files, queue, logger)
 
     # await set_hash(files, status_file)
 

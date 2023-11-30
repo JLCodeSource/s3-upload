@@ -1,5 +1,6 @@
 import asyncio
 import shutil
+from typing import Any
 import uuid
 import os
 import random
@@ -135,8 +136,10 @@ class TestUpload:
         Path(source + rand).mkdir(exist_ok=True)
         # Path(tmp + rand).mkdir(exist_ok=True)
         create_dir_structure(source + rand, 1, 1, 1)
-        files: dict[str, str] = s3.get_local_files(source + rand, logger)
+        status: s3.Status = s3.get_local_status(
+            source + rand, MAX_FILE_SIZE)
 
+        files: s3.Status_Details = status["files"]
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
             for file in files.keys():
@@ -177,7 +180,10 @@ class TestUpload:
         logger: str = "worker-1"
         Path(source+rand).mkdir(exist_ok=True)
         create_dir_structure(source+rand, 1, 1, 1)
-        files: dict[str, str] = s3.get_local_files(source+rand, logger)
+        status: s3.Status = s3.get_local_status(
+            source+rand, MAX_FILE_SIZE)
+
+        files: s3.Status_Details = status["files"]
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
@@ -205,7 +211,9 @@ class TestGetObjectSha:
         Path(source+rand).mkdir(exist_ok=True)
         create_dir_structure(source+rand, 1, 1, 1)
 
-        files: dict[str, str] = s3.get_local_files(source+rand, logger)
+        status: s3.Status = s3.get_local_status(
+            source+rand, MAX_FILE_SIZE)
+        files: s3.Status_Details = status["files"]
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
@@ -238,28 +246,69 @@ class TestGetObjectSha:
                     client, bucket_name, "not_a_file", logger)
 
 
-def test_get_local_files():
-    # Setup
-    rand = str(uuid.uuid4().hex[:6])
-    logger = "main"
-    Path(source+rand).mkdir(exist_ok=True)
-    create_dir_structure(source+rand, 2, 3, 2)
+class TestGetLocalStatus:
+    def test_get_local_status(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 2, 3, 2)
 
-    # Test
-    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
+        # Test
+        got_status: s3.Status = s3.get_local_status(
+            source+rand, MAX_FILE_SIZE)
 
-    want_files: dict[str, str] = {}
-    for root, _, files in os.walk(source+rand):
-        for name in files:
-            want_files[os.path.join(root, name)] = ""
+        want_conf: dict[str, int] = { "max_file_size" : MAX_FILE_SIZE }
+        want_files: dict[str, str] = {}
+        for root, _, files in os.walk(source+rand):
+            for name in files:
+                want_files[os.path.join(root, name)] = ""
+        want_status: s3.Status = {
+            "conf": want_conf,
+            "files" : want_files,
+        }
 
-    # Verify
-    for file in got_files:
-        assert (got_files[file] == want_files[file])
+        # Verify
+        assert ( got_status["conf"] == { "max_file_size" : MAX_FILE_SIZE } ) 
+        for file in got_status["files"]:
+            assert (got_status["files"][file] == want_status["files"][file])
 
     # Cleanup
     os.chdir(pwd)
     clean_up_dir(source+rand)
+
+    def test_get_local_files_max_size(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 2, 3, 2)
+        max_size: int = round(MAX_FILE_SIZE/2)
+
+        # Test
+        all_status: s3.Status = s3.get_local_status(
+            source+rand, MAX_FILE_SIZE)
+        all_files: s3.Status_Details = all_status["files"]
+
+        got_status: s3.Status = s3.get_local_status(
+            source+rand, max_size)
+        got_files: s3.Status_Details = got_status["files"]
+
+
+        want_files: dict[str, str] = {}
+        for root, _, files in os.walk(source+rand):
+            for name in files:
+                fullpath = os.path.join(root, name)
+                if os.stat(fullpath).st_size > max_size:
+                    continue
+                want_files[fullpath] = ""
+
+        # Verify
+        assert (len(all_files) > len(got_files))
+        for file in got_files:
+            assert (got_files[file] == want_files[file])
+
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source+rand)
 
 
 @pytest.mark.asyncio
@@ -272,8 +321,10 @@ async def test_set_hash():
     status_file = "status" + rand + ".json"
 
     # Test
-    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
-    await s3.set_hash(got_files, status_file)
+    got_status: s3.Status = s3.get_local_status(
+        source+rand, MAX_FILE_SIZE)
+    files: dict[str, int] | dict[str, str] = got_status["files"]
+    await s3.set_hash(files, status_file)
 
     want_files: dict[str, str] = {}
     for root, _, files in os.walk(source+rand):
@@ -282,8 +333,8 @@ async def test_set_hash():
             want_files[file] = await s3.hash(file)
 
     # Verify
-    for file in got_files:
-        assert (got_files[file] == want_files[file])
+    for file in got_status["files"]:
+        assert (got_status["files"][file] == want_files[file])
 
     # Cleanup
     os.chdir(pwd)
@@ -299,7 +350,8 @@ async def test_status():
     create_dir_structure(source+rand, 2, 3, 2)
     status_file: str = 'status'+rand+'.json'
 
-    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
+    got_files: dict[str, str] = s3.get_local_status(
+        source+rand, MAX_FILE_SIZE)
     await s3.set_hash(got_files, status_file)
 
     # Test Save Status
@@ -335,7 +387,8 @@ class TestCheckStatus:
         create_dir_structure(source+rand, 2, 3, 2)
         status_file: str = 'status'+rand+'.json'
 
-        want_files: dict[str, str] = s3.get_local_files(source+rand, logger)
+        want_files: dict[str, str] = s3.get_local_status(
+            source+rand, MAX_FILE_SIZE)
 
         os.chdir(pwd)
         s3.save_status(want_files, status_file, logger)
@@ -366,8 +419,10 @@ async def test_add_files_to_queues():
     Path(source+rand).mkdir(exist_ok=True)
     create_dir_structure(source+rand, 2, 3, 2)
 
-    queue: asyncio.Queue = asyncio.Queue()
-    got_files: dict[str, str] = s3.get_local_files(source+rand, logger)
+    hash_q: asyncio.Queue[str] = asyncio.Queue()
+    upload_q: asyncio.Queue[str] = asyncio.Queue()
+    got_files: dict[str, str] = s3.get_local_status(
+        source+rand, MAX_FILE_SIZE)
 
     counter: int = 0
     # Make the values for (approx) 1/3rd of the files(keys) equal
