@@ -47,10 +47,12 @@ class TestMain:
                 assert (done == "Done")
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
-        await test_helpers.clean_up_s3(client, bucket_name, "/")
-        os.remove(str(status_file))
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = client
+        teardown["status_file"] = status_file
+        await test_helpers.teardown(teardown)
+
 
     @pytest.mark.asyncio
     async def test_main_staus_file(self):
@@ -105,10 +107,11 @@ class TestMain:
                 counter = counter + 1
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
-        await test_helpers.clean_up_s3(client, bucket_name, "/")
-        os.remove(str(status_file))
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = client
+        teardown["status_file"] = status_file
+        await test_helpers.teardown(teardown)
 
 class TestUpload:
     @pytest.mark.asyncio
@@ -151,11 +154,12 @@ class TestUpload:
                 # assert (cmphash == sha256)
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
-        # clean_up_dir(tmp + rand)
-        await test_helpers.clean_up_s3(client, bucket_name, "/")
-
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = client
+        teardown["status_file"] = status_file
+        await test_helpers.teardown(teardown)
+        
     @pytest.mark.asyncio
     async def test_upload_exists(self):
         # Setup
@@ -163,7 +167,7 @@ class TestUpload:
             "status_file" : False,
             "dirs" : (1, 1, 1)
         }
-        source, status_file = test_helpers.setup(fixtures)
+        source, _ = test_helpers.setup(fixtures)
         
         
         files: dict[str, str] = s3.get_local_files(
@@ -181,9 +185,11 @@ class TestUpload:
                     await s3.upload(client, bucket_name, file, sha256)
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
-        await test_helpers.clean_up_s3(client, bucket_name, "/")
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = client
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
 
 
     @pytest.mark.asyncio
@@ -193,7 +199,7 @@ class TestUpload:
             "status_file" : False,
             "dirs" : (1, 1, 1)
         }
-        source, status_file = test_helpers.setup(fixtures)
+        source, _ = test_helpers.setup(fixtures)
 
         files: dict[str, str] = s3.get_local_files(
             source, MAX_FILE_SIZE)
@@ -213,9 +219,11 @@ class TestUpload:
             assert(file == "Suspect")
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
-
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
 
 class TestGetObjectSha:
     @pytest.mark.asyncio
@@ -225,7 +233,7 @@ class TestGetObjectSha:
             "status_file" : False,
             "dirs" : (1, 1, 1)
         }
-        source, status_file = test_helpers.setup(fixtures)
+        source, _ = test_helpers.setup(fixtures)
 
         files: dict[str, str] = s3.get_local_files(
             source, MAX_FILE_SIZE)
@@ -246,9 +254,11 @@ class TestGetObjectSha:
                 assert (head_object.get("ChecksumSHA256") == sha256)
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
-        await test_helpers.clean_up_s3(client, bucket_name, "/")
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = client
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
 
     @pytest.mark.asyncio
     async def test_get_object_sha256_no_file(self):
@@ -259,13 +269,13 @@ class TestGetObjectSha:
                 await s3.get_object_sha256(client, bucket_name, "not_a_file")
 
 class TestGetLocalFiles:
-    def test_get_local_files(self):
+    async def test_get_local_files(self):
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
             "dirs" : (2, 3, 2)
         }
-        source, status_file = test_helpers.setup(fixtures)
+        source, _ = test_helpers.setup(fixtures)
 
         # Test
         got_files: dict[str, str] = s3.get_local_files(
@@ -281,17 +291,21 @@ class TestGetLocalFiles:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
 
-    def test_get_local_files_max_size(self):
+
+    async def test_get_local_files_max_size(self):
         # Setup
                 # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
             "dirs" : (1, 2, 2)
         }
-        source, status_file = test_helpers.setup(fixtures)
+        source, _ = test_helpers.setup(fixtures)
         max_size: int = round(MAX_FILE_SIZE/2)
 
         # Test
@@ -314,8 +328,12 @@ class TestGetLocalFiles:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
+
 
 class TestHash:
     @pytest.mark.asyncio
@@ -325,7 +343,7 @@ class TestHash:
             "status_file" : False,
             "dirs" : (1, 1, 1)
         }
-        source, status_file = test_helpers.setup(fixtures)
+        source, _ = test_helpers.setup(fixtures)
 
         files: dict[str, str] = s3.get_local_files(
             source, MAX_FILE_SIZE)
@@ -347,8 +365,12 @@ class TestHash:
         assert(got_hash == want_hash)
         
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
+
 
     @pytest.mark.asyncio
     async def test_hash_os_error(self, monkeypatch: pytest.MonkeyPatch):
@@ -357,7 +379,7 @@ class TestHash:
             "status_file" : False,
             "dirs" : (2, 2, 2)
         }
-        source, status_file = test_helpers.setup(fixtures)
+        source, _ = test_helpers.setup(fixtures)
         
         files: dict[str, str] = s3.get_local_files(
             source, MAX_FILE_SIZE)
@@ -400,8 +422,12 @@ class TestSetHash:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = status_file
+        await test_helpers.teardown(teardown)
+
 
 
     @pytest.mark.asyncio
@@ -429,9 +455,12 @@ class TestSetHash:
             assert(file == "Suspect")
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        test_helpers.clean_up_dir(source)
-
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
+        
 
 @pytest.mark.asyncio
 async def test_status():
@@ -465,13 +494,15 @@ async def test_status():
         assert (got_files[file] == want_files[file])
 
     # Cleanup
-    os.chdir(test_helpers.pwd)
-    os.remove(str(status_file))
-    test_helpers.clean_up_dir(source)
+    teardown: dict[str, bool | str | S3Client | None] = {}
+    teardown["source"] = source
+    teardown["client"] = None
+    teardown["status_file"] = status_file
+    await test_helpers.teardown(teardown)
 
 
 class TestCheckStatus:
-    def test_check_status_success(self):
+    async def test_check_status_success(self):
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : True,
@@ -495,9 +526,11 @@ class TestCheckStatus:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(test_helpers.pwd)
-        os.remove(str(status_file))
-        test_helpers.clean_up_dir(source)
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = status_file
+        await test_helpers.teardown(teardown)
 
     # TODO: Need to add this test!
     def test_check_status_FileNotFound(self):
@@ -511,7 +544,7 @@ async def test_add_files_to_queues():
             "status_file" : False,
             "dirs" : (2, 3, 2)
         }
-    source, status_file = test_helpers.setup(fixtures)
+    source, _ = test_helpers.setup(fixtures)
 
     hash_q: asyncio.Queue[str] = asyncio.Queue()
     upload_q: asyncio.Queue[str] = asyncio.Queue()
@@ -549,5 +582,9 @@ async def test_add_files_to_queues():
     assert (sum(v == "Suspect" for v in got_files.values()) == 5) 
 
     # Cleanup
-    os.chdir(test_helpers.pwd)
-    test_helpers.clean_up_dir(source)
+    teardown: dict[str, bool | str | S3Client | None] = {}
+    teardown["source"] = source
+    teardown["client"] = None
+    teardown["status_file"] = None
+    await test_helpers.teardown(teardown)
+    
