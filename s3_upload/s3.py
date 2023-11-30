@@ -63,12 +63,15 @@ async def get_object_sha256(
 async def hash(file: str) -> str:
     sha256: hashlib._Hash = hashlib.sha256()
     logging.info(f"Attempting to hash file {file}")
-    with open(file, 'rb') as f:
-        while True:
-            data: bytes = f.read(BUF_SIZE)
-            if not data:
-                break
-            sha256.update(data)
+    try:
+        with open(file, 'rb') as f:
+            while True:
+                data: bytes = f.read(BUF_SIZE)
+                if not data:
+                    break
+                sha256.update(data)
+    except OSError:
+        raise
     digest: str = base64.b64encode(sha256.digest()).decode()
     logging.info(f"File {file} has sha256 {digest}")
     return digest
