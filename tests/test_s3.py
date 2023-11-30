@@ -203,6 +203,36 @@ class TestUpload:
         clean_up_dir(source + rand)
         await clean_up_s3(client, bucket_name, "/")
 
+
+    @pytest.mark.asyncio
+    async def test_upload_suspects(self):
+        # Setup
+        rand = str(uuid.uuid4().hex[:6])
+        Path(source+rand).mkdir(exist_ok=True)
+        create_dir_structure(source+rand, 1, 1, 1)
+        files: dict[str, str] = s3.get_local_files(
+            source+rand, MAX_FILE_SIZE)
+
+        for file in files.keys():
+            files[file] = "Suspect"
+
+        session: AioSession = get_session()
+        async with session.create_client('s3') as client:
+            # Test
+            for file in files.keys():
+                sha256: str = "Suspect"
+                await s3.upload(client, bucket_name, file, sha256)
+
+        # Verify
+        for file in files.values():
+            assert(file == "Suspect")
+
+        # Cleanup
+        os.chdir(pwd)
+        clean_up_dir(source + rand)
+        #await clean_up_s3(client, bucket_name, "/")
+
+
 class TestGetObjectSha:
     @pytest.mark.asyncio
     async def test_get_object_sha256(self):
