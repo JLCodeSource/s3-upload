@@ -21,28 +21,24 @@ CHUNK_SIZE = 65536
 bucket_name = 'gb-upload'
 
 
-# Test settings
-pwd: str = os.getcwd()
-source: str = os.path.join(pwd, 'source')
-
 class TestMain:
     @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_main(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source + rand).mkdir(exist_ok=True)
-        status_file: str = "status"+rand+".json"
-        test_helpers.create_dir_structure(source + rand, 3, 2, 2)
-        os.chdir(pwd)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : True,
+            "dirs" : (3, 2, 2)
+        }
+        source, status_file = test_helpers.setup(fixtures)
 
         # Test
-        await s3.main(source + rand, status_file, MAX_FILE_SIZE)
+        await s3.main(source, str(status_file), MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
             # Verify
-            files = s3.load_status(status_file)
+            files = s3.load_status(str(status_file))
             for file, done in files.items():
                 response = await s3.get_object_sha256(
                     client, bucket_name, file)
@@ -51,22 +47,22 @@ class TestMain:
                 assert (done == "Done")
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source + rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
         await test_helpers.clean_up_s3(client, bucket_name, "/")
-        os.remove(status_file)
+        os.remove(str(status_file))
 
     @pytest.mark.asyncio
     async def test_main_staus_file(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source + rand).mkdir(exist_ok=True)
-        status_file: str = "status"+rand+".json"
-        test_helpers.create_dir_structure(source + rand, 1, 1, 6)
-        os.chdir(pwd)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : True,
+            "dirs" : (1, 1, 6)
+        }
+        source, status_file = test_helpers.setup(fixtures)
 
         files: dict[str, str] = s3.get_local_files(
-            source + rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
         
         # Set 1/4 hash, 1/4 "", 1/4 Suspect, 1/4 Done 
         counter: int = 0
@@ -82,15 +78,15 @@ class TestMain:
                 files[file] = "Done"
             counter = counter + 1
 
-        s3.save_status(files, status_file)
+        s3.save_status(files, str(status_file))
 
         # Test
-        await s3.main(source + rand, status_file, MAX_FILE_SIZE)
+        await s3.main(source, str(status_file), MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
             # Verify
-            files = s3.load_status(status_file)
+            files = s3.load_status(str(status_file))
             counter = 0
             for file, status in files.items():
                 if counter % 4 == 2:
@@ -109,21 +105,23 @@ class TestMain:
                 counter = counter + 1
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source + rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
         await test_helpers.clean_up_s3(client, bucket_name, "/")
-        os.remove(status_file)
+        os.remove(str(status_file))
 
 class TestUpload:
     @pytest.mark.asyncio
     async def test_upload(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source + rand).mkdir(exist_ok=True)
-        # Path(tmp + rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source + rand, 1, 1, 1)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 1, 1)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+
         files: dict[str, str] = s3.get_local_files(
-            source + rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
@@ -153,19 +151,23 @@ class TestUpload:
                 # assert (cmphash == sha256)
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source + rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
         # clean_up_dir(tmp + rand)
         await test_helpers.clean_up_s3(client, bucket_name, "/")
 
     @pytest.mark.asyncio
     async def test_upload_exists(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 1, 1)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+        
+        
         files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
@@ -179,19 +181,22 @@ class TestUpload:
                     await s3.upload(client, bucket_name, file, sha256)
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source + rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
         await test_helpers.clean_up_s3(client, bucket_name, "/")
 
 
     @pytest.mark.asyncio
     async def test_upload_suspects(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 1, 1)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+
         files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
         for file in files.keys():
             files[file] = "Suspect"
@@ -208,21 +213,22 @@ class TestUpload:
             assert(file == "Suspect")
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source + rand)
-        #await clean_up_s3(client, bucket_name, "/")
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
 
 
 class TestGetObjectSha:
     @pytest.mark.asyncio
     async def test_get_object_sha256(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 1, 1)
+        }
+        source, status_file = test_helpers.setup(fixtures)
 
         files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
@@ -240,8 +246,8 @@ class TestGetObjectSha:
                 assert (head_object.get("ChecksumSHA256") == sha256)
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source+rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
         await test_helpers.clean_up_s3(client, bucket_name, "/")
 
     @pytest.mark.asyncio
@@ -255,16 +261,18 @@ class TestGetObjectSha:
 class TestGetLocalFiles:
     def test_get_local_files(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (2, 3, 2)
+        }
+        source, status_file = test_helpers.setup(fixtures)
 
         # Test
         got_files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
         want_files: dict[str, str] = {}
-        for root, _, files in os.walk(source+rand):
+        for root, _, files in os.walk(source):
             for name in files:
                 want_files[os.path.join(root, name)] = ""
 
@@ -273,24 +281,27 @@ class TestGetLocalFiles:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source+rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
 
     def test_get_local_files_max_size(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
+                # Setup
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 2, 2)
+        }
+        source, status_file = test_helpers.setup(fixtures)
         max_size: int = round(MAX_FILE_SIZE/2)
 
         # Test
         all_files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
         got_files: dict[str, str] = s3.get_local_files(
-            source+rand, max_size)
+            source, max_size)
 
         want_files: dict[str, str] = {}
-        for root, _, files in os.walk(source+rand):
+        for root, _, files in os.walk(source):
             for name in files:
                 fullpath = os.path.join(root, name)
                 if os.stat(fullpath).st_size > max_size:
@@ -303,18 +314,21 @@ class TestGetLocalFiles:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source+rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
 
 class TestHash:
     @pytest.mark.asyncio
     async def test_hash_success(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 1, 1, 1)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 1, 1)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+
         files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
         # Test
         file: str = list(files.keys())[0]
@@ -332,17 +346,21 @@ class TestHash:
         
         assert(got_hash == want_hash)
         
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source+rand)
+        # Cleanup
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
 
     @pytest.mark.asyncio
     async def test_hash_os_error(self, monkeypatch: pytest.MonkeyPatch):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 2, 2, 2)
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (2, 2, 2)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+        
         files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
         file: str = list(files.keys())[0]
         
         # mock
@@ -356,24 +374,23 @@ class TestHash:
             await s3.hash(file)
 
 
-
-
 class TestSetHash:
     @pytest.mark.asyncio
     async def test_set_hash_success(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
-        status_file = "status" + rand + ".json"
-
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : True,
+            "dirs" : (2, 3, 2)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+        
         # Test
         got_files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
-        await s3.set_hash(got_files, status_file)
+            source, MAX_FILE_SIZE)
+        await s3.set_hash(got_files, str(status_file))
 
         want_files: dict[str, str] = {}
-        for root, _, files in os.walk(source+rand):
+        for root, _, files in os.walk(source):
             for name in files:
                 file: str = os.path.join(root, name)
                 want_files[file] = await s3.hash(file)
@@ -383,20 +400,21 @@ class TestSetHash:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source+rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
 
 
     @pytest.mark.asyncio
     async def test_set_hash_os_error(self, monkeypatch: pytest.MonkeyPatch):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 2, 2, 2)
-        status_file: str = "status" + rand + ".json"
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : True,
+            "dirs" : (2, 2, 2)
+        }
+        source, status_file = test_helpers.setup(fixtures)
 
         files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
         # mock
         async def mock_hash(file):
@@ -405,33 +423,34 @@ class TestSetHash:
         monkeypatch.setattr(s3, "hash", mock_hash)
 
         # Test
-        await s3.set_hash(files, status_file)
+        await s3.set_hash(files, str(status_file))
         # Verify
         for file in files.values():
             assert(file == "Suspect")
 
         # Cleanup
-        os.chdir(pwd)
-        test_helpers.clean_up_dir(source+rand)
+        os.chdir(test_helpers.pwd)
+        test_helpers.clean_up_dir(source)
 
 
 @pytest.mark.asyncio
 async def test_status():
     # Setup
-    rand = str(uuid.uuid4().hex[:6])
-    Path(source+rand).mkdir(exist_ok=True)
-    test_helpers.create_dir_structure(source+rand, 2, 3, 2)
-    status_file: str = 'status'+rand+'.json'
+    fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (2, 3, 2)
+        }
+    source, status_file = test_helpers.setup(fixtures)
 
     got_files: dict[str, str] = s3.get_local_files(
-        source+rand, MAX_FILE_SIZE)
-    await s3.set_hash(got_files, status_file)
+        source, MAX_FILE_SIZE)
+    await s3.set_hash(got_files, str(status_file))
 
     # Test Save Status
-    os.chdir(pwd)
-    s3.save_status(got_files, status_file)
+    os.chdir(test_helpers.pwd)
+    s3.save_status(got_files, str(status_file))
 
-    with open(status_file, 'r') as json_file:
+    with open(str(status_file), 'r') as json_file:
         want_files: dict[str, str] = json.load(json_file)
 
     # Verify
@@ -439,35 +458,36 @@ async def test_status():
         assert (got_files[file] == want_files[file])
 
     # Test Load Status
-    got_files = s3.load_status(status_file)
+    got_files = s3.load_status(str(status_file))
 
     # Verify
     for file in want_files:
         assert (got_files[file] == want_files[file])
 
     # Cleanup
-    os.chdir(pwd)
-    os.remove(status_file)
-    test_helpers.clean_up_dir(source+rand)
+    os.chdir(test_helpers.pwd)
+    os.remove(str(status_file))
+    test_helpers.clean_up_dir(source)
 
 
 class TestCheckStatus:
     def test_check_status_success(self):
         # Setup
-        rand = str(uuid.uuid4().hex[:6])
-        Path(source+rand).mkdir(exist_ok=True)
-        test_helpers.create_dir_structure(source+rand, 2, 3, 2)
-        status_file: str = 'status'+rand+'.json'
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : True,
+            "dirs" : (2, 3, 2)
+        }
+        source, status_file = test_helpers.setup(fixtures)
 
         want_files: dict[str, str] = s3.get_local_files(
-            source+rand, MAX_FILE_SIZE)
+            source, MAX_FILE_SIZE)
 
-        os.chdir(pwd)
-        s3.save_status(want_files, status_file)
+        os.chdir(test_helpers.pwd)
+        s3.save_status(want_files, str(status_file))
 
         # Test Check Status
         got_files: dict[str, str] = s3.check_status(
-            source+rand, status_file, MAX_FILE_SIZE)
+            source, status_file, MAX_FILE_SIZE)
 
         # Verify
 
@@ -475,10 +495,11 @@ class TestCheckStatus:
             assert (got_files[file] == want_files[file])
 
         # Cleanup
-        os.chdir(pwd)
-        os.remove(status_file)
-        test_helpers.clean_up_dir(source+rand)
+        os.chdir(test_helpers.pwd)
+        os.remove(str(status_file))
+        test_helpers.clean_up_dir(source)
 
+    # TODO: Need to add this test!
     def test_check_status_FileNotFound(self):
         pass
 
@@ -486,14 +507,16 @@ class TestCheckStatus:
 @pytest.mark.asyncio
 async def test_add_files_to_queues():
     # Setup
-    rand = str(uuid.uuid4().hex[:6])
-    Path(source+rand).mkdir(exist_ok=True)
-    test_helpers.create_dir_structure(source+rand, 2, 3, 2)
+    fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (2, 3, 2)
+        }
+    source, status_file = test_helpers.setup(fixtures)
 
     hash_q: asyncio.Queue[str] = asyncio.Queue()
     upload_q: asyncio.Queue[str] = asyncio.Queue()
     got_files: dict[str, str] = s3.get_local_files(
-        source+rand, MAX_FILE_SIZE)
+        source, MAX_FILE_SIZE)
 
     counter: int = 0
     # Make the values for 1/4th of the files(keys) equal
@@ -526,5 +549,5 @@ async def test_add_files_to_queues():
     assert (sum(v == "Suspect" for v in got_files.values()) == 5) 
 
     # Cleanup
-    os.chdir(pwd)
-    test_helpers.clean_up_dir(source+rand)
+    os.chdir(test_helpers.pwd)
+    test_helpers.clean_up_dir(source)
