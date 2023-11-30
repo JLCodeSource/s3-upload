@@ -24,6 +24,9 @@ async def upload(
     if sha256 == "Done":
         logging.info(f"File {file} already uploaded; skipping")
         return
+    #elif sha256 == "Suspect":
+    #    logging.info(f"File {file} is suspect; skipping")
+    #    return
     try:
         logging.info(
             f"Trying to upload object {file} to S3 with sha {sha256}")
@@ -52,8 +55,8 @@ async def get_object_sha256(
             Key=file,
             ChecksumMode='ENABLED'
         )
-    except exceptions.ClientError:
-        logging.warning(f"Object {file} not found in S3")
+    except exceptions.ClientError as err:
+        logging.warning(f"Object {file} not found in S3; {err}")
         raise
     sha256: str = response.get("ChecksumSHA256")
     logging.info(f"Object {file} sha256: {sha256}")
@@ -70,7 +73,8 @@ async def hash(file: str) -> str:
                 if not data:
                     break
                 sha256.update(data)
-    except OSError:
+    except OSError as err:
+        logging.error(f"File {file} raised OSError: {err}")
         raise
     digest: str = base64.b64encode(sha256.digest()).decode()
     logging.info(f"File {file} has sha256 {digest}")
@@ -97,9 +101,14 @@ def get_local_files(path: str, max_size: int) -> dict[str, str]:
 async def set_hash(files: dict[str, str], status_file: str) -> None:
     for file, state in files.items():
         if state != "":
-            logging.info(f"File {file} has already been hashed, skipping")
+            logging.info(f"File {file} has already been hashed; skipping")
             continue
-        sha256: str = await hash(file)
+        try:
+            sha256: str = await hash(file)
+        except OSError:
+            logging.info(f"File {file} raised OSError; tagging with 'suspect' & skipping")
+            files[file] = "Suspect"
+            continue
         logging.info(f"Updating {file} key with value {sha256}")
         files[file] = sha256
         save_status(files, status_file)
@@ -111,11 +120,14 @@ async def add_files_to_queues(
         upload_q: asyncio.Queue):
     for file, state in files.items():
         if state == "":
-            logging.debug(f"Adding file {file} to hash queue")
+            logging.info(f"Adding file {file} to hash queue")
             await hash_q.put(file)
         elif state == "Done":
-            logging.debug(f"File {file} is already done")
+            logging.info(f"File {file} is already done")
             continue
+        #elif state == "Suspect":
+        #    logging.info(f"File {file} is suspect; skipping")
+        #    continue
         else:
             logging.debug(f"Adding file {file} to upload queue")
             await upload_q.put(file)
