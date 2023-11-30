@@ -336,7 +336,7 @@ class TestHash:
         test_helpers.clean_up_dir(source+rand)
 
     @pytest.mark.asyncio
-    async def test_hash_os_error(self, monkeypatch):
+    async def test_hash_os_error(self, monkeypatch: pytest.MonkeyPatch):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
@@ -388,7 +388,7 @@ class TestSetHash:
 
 
     @pytest.mark.asyncio
-    async def test_set_hash_os_error(self, monkeypatch):
+    async def test_set_hash_os_error(self, monkeypatch: pytest.MonkeyPatch):
         # Setup
         rand = str(uuid.uuid4().hex[:6])
         Path(source+rand).mkdir(exist_ok=True)
