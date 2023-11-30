@@ -269,6 +269,7 @@ class TestGetObjectSha:
                 await s3.get_object_sha256(client, bucket_name, "not_a_file")
 
 class TestGetLocalFiles:
+    @pytest.mark.asyncio
     async def test_get_local_files(self):
         # Setup
         fixtures: dict[str, bool | tuple] = {
@@ -297,7 +298,7 @@ class TestGetLocalFiles:
         teardown["status_file"] = None
         await test_helpers.teardown(teardown)
 
-
+    @pytest.mark.asyncio
     async def test_get_local_files_max_size(self):
         # Setup
                 # Setup
@@ -502,6 +503,7 @@ async def test_status():
 
 
 class TestCheckStatus:
+    @pytest.mark.asyncio
     async def test_check_status_success(self):
         # Setup
         fixtures: dict[str, bool | tuple] = {
