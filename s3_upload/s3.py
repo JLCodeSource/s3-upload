@@ -38,11 +38,14 @@ async def upload(
             f"Trying to upload Object {file} to S3 with sha256 {status}")
         # get_object_sha256 raises a ClientError if no file exists
         response = await get_object_sha256(client, bucket, file)
-        if response.get("ChecksumSHA256") == status:
+        s3_hash: str = response.get("ChecksumSHA256")
+        if s3_hash == status:
             raise FileExistsError (f"Object {file} exists in S3 with matching sha256 {status}")
         # If the FileExists we raise above & if not, 
-        # we get a ClientError from get_object_sha256 & handle below 
-        return "Should Not Occur"
+        # we get a ClientError from get_object_sha256 & handle below
+        mismatch: str = f"Uploaded hash {s3_hash} does not match local hash {status}"
+        logging.error(mismatch) 
+        return mismatch
     # if get_object_sha256 raises a ClientError upload file
     except exceptions.ClientError:
         try:
