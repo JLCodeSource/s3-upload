@@ -39,12 +39,12 @@ class TestMain:
         async with session.create_client('s3') as client:
             # Verify
             files = s3.load_status(str(status_file))
-            for file, done in files.items():
+            for file, status in files.items():
                 response = await s3.get_object_sha256(
                     client, bucket_name, file)
                 assert (response.get("ResponseMetadata").get(
                         "HTTPStatusCode") == 200)
-                assert (done == "Done")
+                assert (status == "Uploaded")
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -66,7 +66,7 @@ class TestMain:
         files: dict[str, str] = s3.get_local_files(
             source, MAX_FILE_SIZE)
         
-        # Set 1/4 hash, 1/4 "", 1/4 Suspect, 1/4 Done 
+        # Set 1/4 hash, 1/4 "", 1/4 Suspect, 1/4 Uploaded 
         counter: int = 0
         for file in files.keys():
             if counter % 4 == 0:
@@ -77,7 +77,7 @@ class TestMain:
             elif counter % 4 == 2:
                 files[file] = "Suspect"
             else:
-                files[file] = "Done"
+                files[file] = "Uploaded"
             counter = counter + 1
 
         s3.save_status(files, str(status_file))
@@ -96,14 +96,14 @@ class TestMain:
                     counter = counter + 1
                     continue
                 if counter % 4 == 3:
-                    assert (status == "Done")
+                    assert (status == "Uploaded")
                     counter = counter + 1
                     continue
                 response = await s3.get_object_sha256(
                     client, bucket_name, file)
                 assert (response.get("ResponseMetadata").get(
                         "HTTPStatusCode") == 200)
-                assert (status == "Done")
+                assert (status == "Uploaded")
                 counter = counter + 1
 
         # Cleanup
@@ -191,6 +191,39 @@ class TestUpload:
         teardown["status_file"] = None
         await test_helpers.teardown(teardown)
 
+    @pytest.mark.asyncio
+    async def test_upload_file_not_found(self):
+        # Setup
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 0, 0)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+
+        files: dict[str, str] = s3.get_local_files(
+            source, MAX_FILE_SIZE)
+
+        session: AioSession = get_session()
+        async with session.create_client('s3') as client:
+            for file in files.keys():
+                sha256: str = await s3.hash(file)
+
+                # remove files
+                test_helpers.clean_up_dir(source)
+
+                # Verify
+                with pytest.raises(FileNotFoundError):
+                # Test
+                    await s3.upload(client, bucket_name, file, sha256)
+
+                    
+        # Cleanup
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = None
+        teardown["client"] = None
+        teardown["status_file"] = status_file
+        await test_helpers.teardown(teardown)
+        
 
     @pytest.mark.asyncio
     async def test_upload_suspects(self):
@@ -556,7 +589,7 @@ async def test_add_files_to_queues():
     counter: int = 0
     # Make the values for 1/4th of the files(keys) equal
     # to a '' & 1/4th "Suspect" (i.e. both continue), 
-    # 1/4th a random uuid string & 1/4th, Done.
+    # 1/4th a random uuid string & 1/4th, Uploaded.
     # This way we can check the add_files_to_queues logic
     for file, _ in got_files.items():
         if counter % 4 == 0:
@@ -567,7 +600,7 @@ async def test_add_files_to_queues():
         elif counter % 4 == 2:
             got_files[file] = "Suspect"
         else:
-            got_files[file] = "Done"
+            got_files[file] = "Uploaded"
         counter = counter + 1
     # Test
     session: AioSession = get_session()
@@ -577,10 +610,10 @@ async def test_add_files_to_queues():
 
     # Verify
     # N.B. Dirty test to check that 1/4th are in hash_q,
-    # 1/4th are in upload_q & 1/4th are Done & Suspect
+    # 1/4th are in upload_q & 1/4th are Uploaded & Suspect
     assert (hash_q.qsize() == 5)
     assert (upload_q.qsize() == 5)
-    assert (sum(v == "Done" for v in got_files.values()) == 5)
+    assert (sum(v == "Uploaded" for v in got_files.values()) == 5)
     assert (sum(v == "Suspect" for v in got_files.values()) == 5) 
 
     # Cleanup

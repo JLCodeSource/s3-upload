@@ -15,19 +15,23 @@ from botocore import exceptions
 BUF_SIZE = 65536
 bucket_name = 'gb-upload'
 
+def skip_file(file, status) -> bool:
+    logging.info(f"Checking File {file} status")
+    # skip files that are Uploaded or Suspect
+    if status == "Uploaded" or status == "Suspect":
+        logging.info(f"File {file} is {status}; skipping")
+        return True
+    else:
+        logging.info(f"File {file} status is {status}; continuing")
+        return False
+    
 
 async def upload(
         client: S3Client,
         bucket: str,
         file: str,
         status: str) -> str:
-    # skip files that are done
-    if status == "Done":
-        logging.info(f"File {file} already uploaded; skipping")
-        return status
-    # skip files that are suspect
-    elif status == "Suspect":
-        logging.info(f"File {file} is suspect; skipping")
+    if skip_file(file, status) is True:
         return status
     try:
         logging.info(
@@ -41,6 +45,8 @@ async def upload(
         return "Should Not Occur"
     # if get_object_sha256 raises a ClientError upload file
     except exceptions.ClientError:
+        #try:
+        logging.info(f"Attempting to upload {file} with sha256 {status}")
         with open(file, 'rb') as f:
             await client.put_object(
                 Bucket=bucket,
@@ -51,7 +57,9 @@ async def upload(
             logging.info(
                 f"File {file} successfully uploaded to S3 with sha256 {status}"
             )
-        return "Done"
+        return "Uploaded"
+    #except FileNotFoundError as err:
+        #    raise err
 
 
 async def get_object_sha256(
@@ -118,7 +126,7 @@ async def set_hash(files: dict[str, str], status_file: str) -> None:
             sha256: str = await hash(file)
         # tag files with IO Errors with Suspect
         except OSError:
-            logging.info(f"File {file} raised OSError; tagging with 'suspect' & skipping")
+            logging.info(f"File {file} raised OSError; tagging with 'Suspect' & skipping")
             files[file] = "Suspect"
             save_status(files, status_file)
             continue
@@ -135,8 +143,8 @@ async def add_files_to_queues(
         if state == "":
             logging.info(f"Adding file {file} to hash queue")
             await hash_q.put(file)
-        elif state == "Done":
-            logging.info(f"File {file} is already done")
+        elif state == "Uploaded":
+            logging.info(f"File {file} is already Uploaded")
             continue
         elif state == "Suspect":
             logging.info(f"File {file} is suspect; skipping")
@@ -188,6 +196,8 @@ async def main(source: str, status_file: str, max_size: int) -> None:
                 new_status: str = await upload(client, bucket_name, file, status)
             except FileExistsError:
                 logging.info(f"File {file} already exists in S3; skipping")
+            #except FileNotFoundError as err:
+            #    logging.error(f"File {file} not found with error: {err}; skipping")
             files[file] = new_status
             save_status(files, status_file)
 
