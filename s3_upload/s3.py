@@ -19,7 +19,7 @@ def skip_file(file, status) -> bool:
     logging.info(f"Checking File {file} status")
     # skip files that are Uploaded or Suspect
     if status == "Uploaded" or status == "Suspect":
-        logging.info(f"File {file} is {status}; skipping")
+        logging.info(f"File {file} status is {status}; skipping")
         return True
     else:
         logging.info(f"File {file} status is {status}; continuing")
