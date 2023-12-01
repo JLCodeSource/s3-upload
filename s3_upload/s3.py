@@ -58,8 +58,8 @@ async def upload(
                 f"File {file} successfully uploaded to S3 with sha256 {status}"
             )
         return "Uploaded"
-    #except FileNotFoundError as err:
-        #    raise err
+    except FileNotFoundError as err:
+        raise err
 
 
 async def get_object_sha256(
@@ -196,8 +196,8 @@ async def main(source: str, status_file: str, max_size: int) -> None:
                 new_status: str = await upload(client, bucket_name, file, status)
             except FileExistsError:
                 logging.info(f"File {file} already exists in S3; skipping")
-            #except FileNotFoundError as err:
-            #    logging.error(f"File {file} not found with error: {err}; skipping")
+            except FileNotFoundError as err:
+                logging.error(f"File {file} not found with error: {err}; skipping")
             files[file] = new_status
             save_status(files, status_file)
 
