@@ -15,15 +15,15 @@ from botocore import exceptions
 BUF_SIZE = 65536
 bucket_name = 'gb-upload'
 
-def skip_file(file, status) -> bool:
+def skip_file(file, status) -> str:
     logging.info(f"Checking File {file} status")
     # skip files that are Uploaded or Suspect
     if status == "Uploaded" or status == "Suspect":
         logging.info(f"File {file} status is {status}; skipping")
-        return True
+        return status
     else:
         logging.info(f"File {file} status is {status}; continuing")
-        return False
+        return ""
     
 
 async def upload(
@@ -31,15 +31,15 @@ async def upload(
         bucket: str,
         file: str,
         status: str) -> str:
-    if skip_file(file, status) is True:
+    if skip_file(file, status) != "":
         return status
     try:
         logging.info(
-            f"Trying to upload object {file} to S3 with sha256 {status}")
+            f"Trying to upload Object {file} to S3 with sha256 {status}")
         # get_object_sha256 raises a ClientError if no file exists
         response = await get_object_sha256(client, bucket, file)
         if response.get("ChecksumSHA256") == status:
-            raise FileExistsError
+            raise FileExistsError (f"Object {file} exists in S3 with matching sha256 {status}")
         # If the FileExists we raise above & if not, 
         # we get a ClientError from get_object_sha256 & handle below 
         return "Should Not Occur"
@@ -65,7 +65,7 @@ async def upload(
 async def get_object_sha256(
         client: S3Client, bucket: str, file: str):
     try:
-        logging.info(f"Trying to get object {file} sha256 from S3")
+        logging.info(f"Trying to get Object {file} sha256 from S3")
         response = await client.head_object(
             Bucket=bucket,
             Key=file,
@@ -76,7 +76,7 @@ async def get_object_sha256(
         logging.info(f"Object {file} not found in S3; {err}")
         raise
     sha256: str = response.get("ChecksumSHA256")
-    logging.info(f"Object {file} sha256: {sha256}")
+    logging.info(f"S3 Object {file} sha256: {sha256}")
     return response
 
 
@@ -191,14 +191,20 @@ async def main(source: str, status_file: str, max_size: int) -> None:
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
         for file, status in files.items():
-            new_status = ""
             try:
-                new_status: str = await upload(client, bucket_name, file, status)
-            except FileExistsError or FileNotFoundError as err:
+                files[file] = await upload(client, bucket_name, file, status)
+                save_status(files, status_file)
+            except FileNotFoundError or OSError as err:
+                files[file] = "Suspect"
+                save_status(files, status_file)
                 logging.warning(f"File {file} upload errored with {err}; skipping")
-            files[file] = new_status
-            save_status(files, status_file)
-
+                continue
+            except FileExistsError as err:
+                files[file] = "Uploaded"
+                save_status(files, status_file)
+                logging.warning(f"File {file} upload errored with {err}; skipping")
+                continue
+            
     logging.info('Finished s3uploader')
 
 
