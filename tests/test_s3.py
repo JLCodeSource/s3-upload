@@ -249,6 +249,49 @@ class TestUpload:
         teardown["status_file"] = None
         await test_helpers.teardown(teardown)
 
+    @pytest.mark.asyncio
+    async def test_upload_mismatch(self):
+        # Setup
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 0, 0)
+        }
+        source, status_file = test_helpers.setup(fixtures)
+
+        files: dict[str, str] = s3.get_local_files(
+            source, MAX_FILE_SIZE)
+
+        session: AioSession = get_session()
+        async with session.create_client('s3') as client:
+            for file in files.keys():
+                initial_sha256: str = await s3.hash(file)
+
+                uploaded: str = await s3.upload(client, bucket_name, file, initial_sha256)
+                assert (uploaded == "Uploaded")
+
+                # Modify file
+                append_bytes = b'\xC3\xA9'
+                with open(file, "ab") as f:
+                    f.write(append_bytes)
+
+                post_sha256: str = await s3.hash(file)
+                value: str = f"Uploaded hash {initial_sha256} does not match local hash {post_sha256}"
+
+                # Test
+                mismatch: str = await s3.upload(client, bucket_name, file, post_sha256)
+                
+                # Verify
+                assert(mismatch == value)
+                    
+        # Cleanup
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = None
+        teardown["client"] = None
+        teardown["status_file"] = status_file
+        await test_helpers.teardown(teardown)
+
+
+
 class TestGetObjectSha:
     @pytest.mark.asyncio
     async def test_get_object_sha256(self):
