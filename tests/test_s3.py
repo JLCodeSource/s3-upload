@@ -250,7 +250,7 @@ class TestUpload:
         await test_helpers.teardown(teardown)
 
     @pytest.mark.asyncio
-    async def test_upload_mismatch(self):
+    async def test_upload_sha_mismatch(self):
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
