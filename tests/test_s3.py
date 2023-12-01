@@ -132,7 +132,7 @@ class TestUpload:
                 sha256: str = await s3.hash(file)
 
                 # Test
-                await s3.upload(client, bucket_name, file, sha256)
+                status = await s3.upload(client, bucket_name, file, sha256)
 
                 # Verify
                 response = await s3.get_object_sha256(
@@ -142,16 +142,7 @@ class TestUpload:
                     "HTTPStatusCode") == 200)
                 assert (response.get("ChecksumSHA256") == sha256)
 
-                # TODO: get download working async
-                # response = await download(client,
-                #                          bucket_name, tmp + rand, file)
-                # os.chdir(tmp + rand)
-                # cmphash: str = await s3.hash(file)
-
-                # assert (response.get("ResponseMetadata").get(
-                #        "HTTPStatusCode") == 200)
-                # assert (response.get("ChecksumSHA256") == sha256)
-                # assert (cmphash == sha256)
+                assert (status == "Uploaded")
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
