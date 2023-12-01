@@ -120,6 +120,7 @@ async def set_hash(files: dict[str, str], status_file: str) -> None:
         except OSError:
             logging.info(f"File {file} raised OSError; tagging with 'suspect' & skipping")
             files[file] = "Suspect"
+            save_status(files, status_file)
             continue
         logging.info(f"Updating {file} key with value {sha256}")
         files[file] = sha256
