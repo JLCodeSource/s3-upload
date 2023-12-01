@@ -112,7 +112,8 @@ def setup(fixtures: dict[str, bool | tuple]) -> tuple[str, str | None]:
 
 async def teardown(teardown: dict[str, bool | str | S3Client | None]):
     os.chdir(pwd)
-    clean_up_dir(teardown["source"])
+    if teardown["source"] is not None:
+        clean_up_dir(teardown["source"])
     if teardown["client"] is not None:
         await clean_up_s3(teardown["client"], test_s3.bucket_name, "/") # type: ignore
     if teardown["status_file"] is not None:
