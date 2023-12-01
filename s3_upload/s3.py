@@ -45,21 +45,21 @@ async def upload(
         return "Should Not Occur"
     # if get_object_sha256 raises a ClientError upload file
     except exceptions.ClientError:
-        #try:
-        logging.info(f"Attempting to upload {file} with sha256 {status}")
-        with open(file, 'rb') as f:
-            await client.put_object(
-                Bucket=bucket,
-                Body=f,
-                Key=file,
-                ChecksumAlgorithm='SHA256',
-                ChecksumSHA256=status)
-            logging.info(
-                f"File {file} successfully uploaded to S3 with sha256 {status}"
-            )
-        return "Uploaded"
-    except FileNotFoundError as err:
-        raise err
+        try:
+            logging.info(f"Attempting to upload {file} with sha256 {status}")
+            with open(file, 'rb') as f:
+                await client.put_object(
+                    Bucket=bucket,
+                    Body=f,
+                    Key=file,
+                    ChecksumAlgorithm='SHA256',
+                    ChecksumSHA256=status)
+                logging.info(
+                    f"File {file} successfully uploaded to S3 with sha256 {status}"
+                )
+            return "Uploaded"
+        except FileNotFoundError as err:
+            raise err
 
 
 async def get_object_sha256(
@@ -194,10 +194,8 @@ async def main(source: str, status_file: str, max_size: int) -> None:
             new_status = ""
             try:
                 new_status: str = await upload(client, bucket_name, file, status)
-            except FileExistsError:
-                logging.info(f"File {file} already exists in S3; skipping")
-            except FileNotFoundError as err:
-                logging.error(f"File {file} not found with error: {err}; skipping")
+            except FileExistsError or FileNotFoundError as err:
+                logging.warning(f"File {file} upload errored with {err}; skipping")
             files[file] = new_status
             save_status(files, status_file)
 
