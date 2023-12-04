@@ -217,7 +217,7 @@ class TestUpload:
         
 
     @pytest.mark.asyncio
-    async def test_upload_suspects(self):
+    async def test_upload_status_suspects(self):
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
@@ -248,6 +248,37 @@ class TestUpload:
         teardown["client"] = None
         teardown["status_file"] = None
         await test_helpers.teardown(teardown)
+
+    @pytest.mark.asyncio
+    async def test_upload_filesystem_suspects(self):
+        # Setup
+        fixtures: dict[str, bool | tuple] = {
+            "status_file" : False,
+            "dirs" : (1, 0, 0)
+        }
+        source, _ = test_helpers.setup(fixtures)
+
+        files: dict[str, str] = s3.get_local_files(
+            source, MAX_FILE_SIZE)
+
+        for file in files.keys():
+            os.remove(file)
+
+        session: AioSession = get_session()
+        with pytest.raises(FileNotFoundError):
+            async with session.create_client('s3') as client:
+                # Test
+                for file in files.keys():
+                    sha256 = "WDE6ZSnSCMhecQYimORcJgZwMeSvGbNO37Svw9ATruo="
+                    await s3.upload(client, bucket_name, file, sha256)
+
+        # Cleanup
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
+
 
     @pytest.mark.asyncio
     async def test_upload_sha_mismatch(self):
