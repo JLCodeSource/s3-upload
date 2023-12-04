@@ -459,20 +459,20 @@ class TestHash:
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
-            "dirs" : (1, 0, 0)
+            "dirs" : (1, 1, 1)
         }
         source, _ = test_helpers.setup(fixtures)
 
-        files: dict[str, s3.File] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         # Test
-        for filepath in files.keys():
-            got_hash: str = await s3.hash(filepath)
+        for file in files:
+            got_hash: str = await s3.hash(file.filepath)
         
             # Verify
             sha256: hashlib._Hash = hashlib.sha256()
-            with open(filepath, 'rb') as f:
+            with open(file.filepath, 'rb') as f:
                 while True:
                     data: bytes = f.read(s3.BUF_SIZE)
                     if not data:
@@ -495,13 +495,13 @@ class TestHash:
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
-            "dirs" : (2, 2, 2)
+            "dirs" : (1, 0, 0)
         }
         source, _ = test_helpers.setup(fixtures)
         
-        files: dict[str, s3.File] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
-        file: str = list(files.keys())[0]
+        
         
         # mock
         def mock_sha256():
@@ -511,7 +511,15 @@ class TestHash:
 
         # Test
         with pytest.raises(OSError):
-            await s3.hash(file)
+            await s3.hash(files[0].filepath)
+
+        
+        # Cleanup
+        teardown: dict[str, bool | str | S3Client | None] = {}
+        teardown["source"] = source
+        teardown["client"] = None
+        teardown["status_file"] = None
+        await test_helpers.teardown(teardown)
 
 
 class TestSetHash:
