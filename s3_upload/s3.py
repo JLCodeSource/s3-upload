@@ -151,17 +151,17 @@ async def set_hash(files: dict[str, File], status_file: str) -> None:
 
 
 async def add_files_to_queues(
-        files: dict[str, str],
+        files: list[File],
         hash_q: asyncio.Queue,
         upload_q: asyncio.Queue):
-    for file, state in files.items():
-        if state == "":
+    for file in files:
+        if file.is_hashed is False:
             logging.info(f"Adding file {file} to hash queue")
             await hash_q.put(file)
-        elif state == "Uploaded":
+        elif file.is_uploaded:
             logging.info(f"File {file} is already Uploaded")
             continue
-        elif state == "Suspect":
+        elif file.is_suspect:
             logging.info(f"File {file} is suspect; skipping")
             continue
         else:
