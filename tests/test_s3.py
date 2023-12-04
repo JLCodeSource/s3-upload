@@ -668,7 +668,7 @@ async def test_add_files_to_queues():
 
     hash_q: asyncio.Queue[str] = asyncio.Queue()
     upload_q: asyncio.Queue[str] = asyncio.Queue()
-    got_files: dict[str, str] = s3.get_local_files(
+    got_files: list[s3.File] = s3.get_local_files(
         source, MAX_FILE_SIZE)
 
     counter: int = 0
@@ -676,16 +676,19 @@ async def test_add_files_to_queues():
     # to a '' & 1/4th "Suspect" (i.e. both continue), 
     # 1/4th a random uuid string & 1/4th, Uploaded.
     # This way we can check the add_files_to_queues logic
-    for file, _ in got_files.items():
+    for i in range(len(got_files)):
         if counter % 4 == 0:
-            got_files[file] = str(uuid.uuid4())
+            got_files[i].is_hashed = True
+            got_files[i].sha256 = str(uuid.uuid4())
         elif counter % 4 == 1:
             counter = counter + 1
             continue
         elif counter % 4 == 2:
-            got_files[file] = "Suspect"
+            got_files[i].is_hashed = True
+            got_files[i].is_suspect = True
         else:
-            got_files[file] = "Uploaded"
+            got_files[i].is_hashed = True
+            got_files[i].is_uploaded = True
         counter = counter + 1
     # Test
     session: AioSession = get_session()
@@ -698,8 +701,8 @@ async def test_add_files_to_queues():
     # 1/4th are in upload_q & 1/4th are Uploaded & Suspect
     assert (hash_q.qsize() == 5)
     assert (upload_q.qsize() == 5)
-    assert (sum(v == "Uploaded" for v in got_files.values()) == 5)
-    assert (sum(v == "Suspect" for v in got_files.values()) == 5) 
+    assert (sum(v.is_uploaded for v in got_files if v.is_uploaded) == 5)
+    assert (sum(v.is_suspect for v in got_files if v.is_suspect) == 5)
 
     # Cleanup
     teardown: dict[str, bool | str | S3Client | None] = {}
