@@ -18,7 +18,7 @@ bucket_name = 'gb-upload'
 def skip_file(file, status) -> str:
     logging.info(f"Checking File {file} status")
     # skip files that are Uploaded or Suspect
-    if status == "Uploaded" or status == "Suspect":
+    if status == "Uploaded" or status == "Suspect" or status == "Mismatch":
         logging.info(f"File {file} status is {status}; skipping")
         return status
     else:
@@ -43,9 +43,8 @@ async def upload(
             raise FileExistsError (f"Object {file} exists in S3 with matching sha256 {status}")
         # If the FileExists we raise above & if not, 
         # we get a ClientError from get_object_sha256 & handle below
-        mismatch: str = f"Uploaded hash {s3_hash} does not match local hash {status}"
-        logging.error(mismatch) 
-        return mismatch
+        logging.error(f"Uploaded hash {s3_hash} does not match local hash {status}") 
+        return "Mismatch"
     # if get_object_sha256 raises a ClientError upload file
     except exceptions.ClientError:
         try:
