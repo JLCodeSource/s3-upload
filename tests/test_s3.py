@@ -10,6 +10,9 @@ from aiobotocore.session import (
     get_session, AioSession)
 from types_aiobotocore_s3.client import S3Client
 from botocore import exceptions
+
+
+
 import pytest
 
 import tests.test_helpers as test_helpers
@@ -24,8 +27,13 @@ bucket_name = 'gb-upload'
 class TestFile:
     @pytest.mark.asyncio
     async def test_File(self):
-        file = s3.File(name="", is_hashed=False, is_uploaded=False, is_errored=False, sha256="")
+        file = s3.File()
         assert(type(file) == s3.File)
+        assert(file.filepath == "")
+        assert(file.is_hashed == False)
+        assert(file.is_uploaded == False)
+        assert(file.is_suspect == False)
+        assert(file.sha256 == "")
 
 class TestMain:
     @pytest.mark.slow
@@ -383,13 +391,18 @@ class TestGetLocalFiles:
         source, _ = test_helpers.setup(fixtures)
 
         # Test
-        got_files: dict[str, str] = s3.get_local_files(
+        got_files: dict[str, s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
-        want_files: dict[str, str] = {}
+        want_files: dict[str, s3.File] = {}
         for root, _, files in os.walk(source):
             for name in files:
-                want_files[os.path.join(root, name)] = ""
+                want_files[os.path.join(root, name)] = s3.File(
+                    filepath=os.path.join(root, name),
+                    is_hashed=False,
+                    is_uploaded=False,
+                    is_suspect=False,
+                    sha256="")
 
         # Verify
         for file in got_files:
@@ -414,18 +427,18 @@ class TestGetLocalFiles:
         max_size: int = round(MAX_FILE_SIZE/2)
 
         # Test
-        all_files: dict[str, str] = s3.get_local_files(
+        all_files: dict[str, s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
-        got_files: dict[str, str] = s3.get_local_files(
+        got_files: dict[str, s3.File] = s3.get_local_files(
             source, max_size)
 
-        want_files: dict[str, str] = {}
+        want_files: dict[str, s3.File] = {}
         for root, _, files in os.walk(source):
             for name in files:
                 fullpath = os.path.join(root, name)
                 if os.stat(fullpath).st_size > max_size:
                     continue
-                want_files[fullpath] = ""
+                want_files[fullpath] = s3.File(filepath=fullpath)
 
         # Verify
         assert (len(all_files) > len(got_files))
@@ -446,29 +459,29 @@ class TestHash:
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
-            "dirs" : (1, 1, 1)
+            "dirs" : (1, 0, 0)
         }
         source, _ = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: dict[str, s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         # Test
-        file: str = list(files.keys())[0]
-        got_hash: str = await s3.hash(file)
+        for filepath in files.keys():
+            got_hash: str = await s3.hash(filepath)
         
-        # Verify
-        sha256: hashlib._Hash = hashlib.sha256()
-        with open(file, 'rb') as f:
-            while True:
-                data: bytes = f.read(s3.BUF_SIZE)
-                if not data:
-                    break
-                sha256.update(data)
-        want_hash: str = base64.b64encode(sha256.digest()).decode()
-        
-        assert(got_hash == want_hash)
-        
+            # Verify
+            sha256: hashlib._Hash = hashlib.sha256()
+            with open(filepath, 'rb') as f:
+                while True:
+                    data: bytes = f.read(s3.BUF_SIZE)
+                    if not data:
+                        break
+                    sha256.update(data)
+            want_hash: str = base64.b64encode(sha256.digest()).decode()
+            
+            assert(got_hash == want_hash)
+            
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
         teardown["source"] = source
@@ -486,7 +499,7 @@ class TestHash:
         }
         source, _ = test_helpers.setup(fixtures)
         
-        files: dict[str, str] = s3.get_local_files(
+        files: dict[str, s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
         file: str = list(files.keys())[0]
         
@@ -512,15 +525,16 @@ class TestSetHash:
         source, status_file = test_helpers.setup(fixtures)
         
         # Test
-        got_files: dict[str, str] = s3.get_local_files(
+        got_files: dict[str, s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
         await s3.set_hash(got_files, str(status_file))
 
-        want_files: dict[str, str] = {}
+        want_files: dict[str, s3.File] = {}
         for root, _, files in os.walk(source):
             for name in files:
                 file: str = os.path.join(root, name)
-                want_files[file] = await s3.hash(file)
+                want_files[file].sha256 = await s3.hash(file)
+                want_files[file].is_hashed = True
 
         # Verify
         for file in got_files:
@@ -544,7 +558,7 @@ class TestSetHash:
         }
         source, status_file = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: dict[str, s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         # mock
@@ -557,7 +571,7 @@ class TestSetHash:
         await s3.set_hash(files, str(status_file))
         # Verify
         for file in files.values():
-            assert(file == "Suspect")
+            assert(file.is_suspect == True)
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -616,20 +630,20 @@ class TestCheckStatus:
         }
         source, status_file = test_helpers.setup(fixtures)
 
-        want_files: dict[str, str] = s3.get_local_files(
+        want_files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         os.chdir(test_helpers.pwd)
         s3.save_status(want_files, str(status_file))
 
         # Test Check Status
-        got_files: dict[str, str] = s3.check_status(
+        got_files: list[s3.File] = s3.check_status(
             source, status_file, MAX_FILE_SIZE)
 
         # Verify
 
-        for file in got_files:
-            assert (got_files[file] == want_files[file])
+        for i in range(len(got_files)):
+            assert (got_files[i] == want_files[i])
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}

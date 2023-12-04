@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import logging
 import os
@@ -10,19 +10,22 @@ import sys
 from aiobotocore.session import (
     get_session, AioSession)
 from types_aiobotocore_s3.client import S3Client
-
 from botocore import exceptions
+
+from dataclasses_json import dataclass_json
 
 BUF_SIZE = 65536
 bucket_name = 'gb-upload'
 
+
+@dataclass_json
 @dataclass
 class File:
-    name: str
-    is_hashed: bool
-    is_uploaded: bool
-    is_errored: bool
-    sha256: str
+    filepath: str = field(default="")
+    is_hashed: bool = field(default=False)
+    is_uploaded: bool = field(default=False)
+    is_suspect: bool = field(default=False)
+    sha256: str = field(default="")
 
 
 def skip_file(file, status) -> str:
@@ -92,11 +95,11 @@ async def get_object_sha256(
     return response
 
 
-async def hash(file: str) -> str:
+async def hash(filepath: str) -> str:
     sha256: hashlib._Hash = hashlib.sha256()
-    logging.info(f"Attempting to hash file {file}")
+    logging.info(f"Attempting to hash file {filepath}")
     try:
-        with open(file, 'rb') as f:
+        with open(filepath, 'rb') as f:
             while True:
                 data: bytes = f.read(BUF_SIZE)
                 if not data:
@@ -104,16 +107,16 @@ async def hash(file: str) -> str:
                 sha256.update(data)
     # raise OSError for caller to handle if IO error
     except OSError as err:
-        logging.error(f"File {file} raised OSError: {err}")
+        logging.error(f"File {filepath} raised OSError: {err}")
         raise
     digest: str = base64.b64encode(sha256.digest()).decode()
-    logging.info(f"File {file} has sha256 {digest}")
+    logging.info(f"File {filepath} has sha256 {digest}")
     return digest
 
 
-def get_local_files(path: str, max_size: int) -> dict[str, str]:
+def get_local_files(path: str, max_size: int) -> list[File]:
     logging.info(f"Getting local files with max_size: {max_size}")
-    file_out: dict[str, str] = {}
+    file_list: list[File] = []
     for root, _, files in os.walk(path):
         for name in files:
             fullpath: str = os.path.join(root, name)
@@ -122,28 +125,28 @@ def get_local_files(path: str, max_size: int) -> dict[str, str]:
             if statinfo.st_size > max_size:
                 logging.info(
                     f"File {fullpath} file_size {statinfo.st_size}"
-                    f"> max_size {max_size}; skipping ")
+                    f"> max_size {max_size}; skipping")
                 continue
-            file_out[fullpath] = ""
-            logging.info(f"Adding {fullpath} key with empty value")
-    return file_out
+            file_list.append(File(filepath=fullpath))
+            logging.info(f"Adding {fullpath} key with default values")
+    return file_list
 
 
-async def set_hash(files: dict[str, str], status_file: str) -> None:
+async def set_hash(files: dict[str, File], status_file: str) -> None:
     for file, state in files.items():
-        if state != "":
+        if state.is_suspect:
             logging.info(f"File {file} has already been hashed; skipping")
             continue
         try:
             sha256: str = await hash(file)
         # tag files with IO Errors with Suspect
         except OSError:
-            logging.info(f"File {file} raised OSError; tagging with 'Suspect' & skipping")
-            files[file] = "Suspect"
+            logging.info(f"File {file} raised OSError; tagging as Suspect & skipping")
+            files[file].is_suspect = True
             save_status(files, status_file)
             continue
         logging.info(f"Updating {file} key with value {sha256}")
-        files[file] = sha256
+        files[file].sha256 = sha256
         save_status(files, status_file)
 
 
@@ -166,23 +169,24 @@ async def add_files_to_queues(
             await upload_q.put(file)
 
 
-def save_status(files: dict[str, str], status_file: str) -> None:
+def save_status(files: list[File], status_file: str) -> None:
     with open(status_file, 'w') as f:
-        f.write(json.dumps(files, indent=2))
+        f.write(File.schema().dumps(files, many=True, indent=2)) # type: ignore
         logging.info(f"Writing status to {status_file}")
 
 
-def load_status(status_file: str) -> dict[str, str]:
+def load_status(status_file: str) -> list[File]:
     try:
         with open(status_file, 'r') as json_file:
             logging.info(f"Loading status from {status_file}")
-            return json.load(json_file)
+            loaded = json.load(json_file)
+            return File.schema().load(loaded, many=True) # type: ignore
     except FileNotFoundError:
         raise
 
 
-def check_status(source, status_file, max_size) -> dict[str, str]:
-    files: dict[str, str] = {}
+def check_status(source, status_file, max_size) -> list[File]:
+    files: list[File] = []
     try:
         files = load_status(status_file)
     except FileNotFoundError:
