@@ -21,6 +21,12 @@ CHUNK_SIZE = 65536
 bucket_name = 'gb-upload'
 
 
+class TestFile:
+    @pytest.mark.asyncio
+    async def test_File(self):
+        file = s3.File(name="", is_hashed=False, is_uploaded=False, is_errored=False, sha256="")
+        assert(type(file) == s3.File)
+
 class TestMain:
     @pytest.mark.slow
     @pytest.mark.asyncio

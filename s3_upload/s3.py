@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 import json
 import logging
 import os
@@ -14,6 +15,15 @@ from botocore import exceptions
 
 BUF_SIZE = 65536
 bucket_name = 'gb-upload'
+
+@dataclass
+class File:
+    name: str
+    is_hashed: bool
+    is_uploaded: bool
+    is_errored: bool
+    sha256: str
+
 
 def skip_file(file, status) -> str:
     logging.info(f"Checking File {file} status")
