@@ -312,13 +312,13 @@ class TestUpload:
                     f.write(append_bytes)
 
                 post_sha256: str = await s3.hash(file)
-                value: str = f"Uploaded hash {initial_sha256} does not match local hash {post_sha256}"
+                #log: str = f"Uploaded hash {initial_sha256} does not match local hash {post_sha256}"
 
                 # Test
                 mismatch: str = await s3.upload(client, bucket_name, file, post_sha256)
                 
                 # Verify
-                assert(mismatch == value)
+                assert(mismatch == "Mismatch")
                     
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
