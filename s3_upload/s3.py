@@ -28,51 +28,54 @@ class File:
     sha256: str = field(default="")
 
 
-def skip_file(file, status) -> str:
-    logging.info(f"Checking File {file} status")
+def skip_file(file: File) -> bool:
+    logging.info(f"Checking File {file.filepath} status")
     # skip files that are Uploaded or Suspect
-    if status == "Uploaded" or status == "Suspect" or status == "Mismatch":
-        logging.info(f"File {file} status is {status}; skipping")
-        return status
+    if file.is_suspect:
+        logging.info(f"File {file.filepath} status is Suspect; skipping")
+        return True
+    elif file.is_uploaded:
+        logging.info(f"File {file.filepath} status is Uploaded; skipping")
+        return True
     else:
-        logging.info(f"File {file} status is {status}; continuing")
-        return ""
+        logging.info(f"File {file} status is ok; continuing")
+        return False
     
 
 async def upload(
         client: S3Client,
         bucket: str,
-        file: str,
-        status: str) -> str:
-    if skip_file(file, status) != "":
-        return status
+        file: File) -> File:
+    if skip_file(file):
+        return file
     try:
         logging.info(
-            f"Trying to upload Object {file} to S3 with sha256 {status}")
+            f"Trying to upload Object {file.filepath} to S3 with sha256 {file.sha256}")
         # get_object_sha256 raises a ClientError if no file exists
-        response = await get_object_sha256(client, bucket, file)
+        response = await get_object_sha256(client, bucket, file.filepath)
         s3_hash: str = response.get("ChecksumSHA256")
-        if s3_hash == status:
-            raise FileExistsError (f"Object {file} exists in S3 with matching sha256 {status}")
+        if s3_hash == file.sha256:
+            raise FileExistsError (f"Object {file.filepath} exists in S3 with matching sha256 {file.sha256}")
         # If the FileExists we raise above & if not, 
         # we get a ClientError from get_object_sha256 & handle below
-        logging.error(f"Uploaded hash {s3_hash} does not match local hash {status}") 
-        return "Mismatch"
+        logging.warning(f"Uploaded hash {s3_hash} does not match local hash {file.sha256}") 
+        return file
     # if get_object_sha256 raises a ClientError upload file
     except exceptions.ClientError:
         try:
-            logging.info(f"Attempting to upload {file} with sha256 {status}")
-            with open(file, 'rb') as f:
+            logging.info(f"Attempting to upload {file.filepath} with sha256 {file.sha256}")
+            with open(file.filepath, 'rb') as f:
                 await client.put_object(
                     Bucket=bucket,
                     Body=f,
-                    Key=file,
+                    Key=file.filepath,
                     ChecksumAlgorithm='SHA256',
-                    ChecksumSHA256=status)
+                    ChecksumSHA256=file.sha256)
                 logging.info(
-                    f"File {file} successfully uploaded to S3 with sha256 {status}"
+                    f"File {file.filepath} successfully uploaded to S3 with sha256 {file.sha256}"
                 )
-            return "Uploaded"
+            file.is_uploaded = True
+            return file
         except FileNotFoundError as err:
             raise err
 
