@@ -391,22 +391,22 @@ class TestGetLocalFiles:
         source, _ = test_helpers.setup(fixtures)
 
         # Test
-        got_files: dict[str, s3.File] = s3.get_local_files(
+        got_files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
-        want_files: dict[str, s3.File] = {}
+        want_files: list[s3.File] = []
         for root, _, files in os.walk(source):
             for name in files:
-                want_files[os.path.join(root, name)] = s3.File(
+                want_files.append(s3.File(
                     filepath=os.path.join(root, name),
                     is_hashed=False,
                     is_uploaded=False,
                     is_suspect=False,
-                    sha256="")
+                    sha256=""))
 
         # Verify
-        for file in got_files:
-            assert (got_files[file] == want_files[file])
+        for i in range(len(got_files)):
+            assert (got_files[i] == want_files[i])
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -427,23 +427,23 @@ class TestGetLocalFiles:
         max_size: int = round(MAX_FILE_SIZE/2)
 
         # Test
-        all_files: dict[str, s3.File] = s3.get_local_files(
+        all_files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
-        got_files: dict[str, s3.File] = s3.get_local_files(
+        got_files: list[s3.File] = s3.get_local_files(
             source, max_size)
 
-        want_files: dict[str, s3.File] = {}
+        want_files: list[s3.File] = []
         for root, _, files in os.walk(source):
             for name in files:
                 fullpath = os.path.join(root, name)
                 if os.stat(fullpath).st_size > max_size:
                     continue
-                want_files[fullpath] = s3.File(filepath=fullpath)
+                want_files.append(s3.File(filepath=fullpath))
 
         # Verify
         assert (len(all_files) > len(got_files))
-        for file in got_files:
-            assert (got_files[file] == want_files[file])
+        for i in range(len(got_files)):
+            assert (got_files[i] == want_files[i])
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
