@@ -169,7 +169,7 @@ async def add_files_to_queues(
             logging.info(f"File {file.filepath} is suspect; skipping")
             continue
         else:
-            logging.info(f"Adding file {file} to upload queue")
+            logging.info(f"Adding file {file.filepath} to upload queue")
             await upload_q.put(file)
 
 
@@ -204,25 +204,25 @@ async def main(source: str, status_file: str, max_size: int) -> None:
     logging.info(f"Source set to {source}")
     logging.info(f"Status file set to {status_file}")
 
-    files: dict[str, str] = check_status(source, status_file, max_size)
+    files: list[File] = check_status(source, status_file, max_size)
 
     await set_hash(files, status_file)
 
     session: AioSession = get_session()
     async with session.create_client('s3') as client:
-        for file, status in files.items():
+        for file in files:
             try:
-                files[file] = await upload(client, bucket_name, file, status)
+                await upload(client, bucket_name, file)
                 save_status(files, status_file)
             except FileNotFoundError or OSError as err:
-                files[file] = "Suspect"
+                file.is_suspect = True
                 save_status(files, status_file)
-                logging.warning(f"File {file} upload errored with {err}; skipping")
+                logging.warning(f"File {file.filepath} upload errored with {err}; skipping")
                 continue
             except FileExistsError as err:
-                files[file] = "Uploaded"
+                file.is_uploaded = True
                 save_status(files, status_file)
-                logging.warning(f"File {file} upload errored with {err}; skipping")
+                logging.warning(f"File {file.filepath} upload errored with {err}; skipping")
                 continue
             
     logging.info('Finished s3uploader')
