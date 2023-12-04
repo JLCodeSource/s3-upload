@@ -35,6 +35,7 @@ class TestFile:
         assert(file.is_suspect == False)
         assert(file.sha256 == "")
 
+
 class TestMain:
     @pytest.mark.slow
     @pytest.mark.asyncio
@@ -137,26 +138,26 @@ class TestUpload:
         }
         source, status_file = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
-            for file in files.keys():
-                sha256: str = await s3.hash(file)
+            for file in files:
+                file.sha256 = await s3.hash(file.filepath)
 
                 # Test
-                status = await s3.upload(client, bucket_name, file, sha256)
+                await s3.upload(client, bucket_name, file)
 
                 # Verify
                 response = await s3.get_object_sha256(
-                    client, bucket_name, file)
+                    client, bucket_name, file.filepath)
 
                 assert (response.get("ResponseMetadata").get(
                     "HTTPStatusCode") == 200)
-                assert (response.get("ChecksumSHA256") == sha256)
+                assert (response.get("ChecksumSHA256") == file.sha256)
 
-                assert (status == "Uploaded")
+                assert (file.is_uploaded)
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -165,29 +166,31 @@ class TestUpload:
         teardown["status_file"] = status_file
         await test_helpers.teardown(teardown)
         
+
     @pytest.mark.asyncio
     async def test_upload_exists(self):
         # Setup
         fixtures: dict[str, bool | tuple] = {
             "status_file" : False,
-            "dirs" : (1, 1, 1)
+            "dirs" : (1, 0, 0)
         }
         source, _ = test_helpers.setup(fixtures)
         
-        
-        files: dict[str, str] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
 
-            for file in files.keys():
-                sha256: str = await s3.hash(file)
-                await s3.upload(client, bucket_name, file, sha256)
+            for file in files:
+                file.sha256 = await s3.hash(file.filepath)
+                file.is_hashed = True
+                await s3.upload(client, bucket_name, file)
+                file.is_uploaded = False
 
                 # Test
                 with pytest.raises(FileExistsError):
-                    await s3.upload(client, bucket_name, file, sha256)
+                    await s3.upload(client, bucket_name, file)
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -205,13 +208,13 @@ class TestUpload:
         }
         source, status_file = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
-            for file in files.keys():
-                sha256: str = await s3.hash(file)
+            for file in files:
+                file.sha256 = await s3.hash(file.filepath)
 
                 # remove files
                 test_helpers.clean_up_dir(source)
@@ -219,7 +222,7 @@ class TestUpload:
                 # Verify
                 with pytest.raises(FileNotFoundError):
                 # Test
-                    await s3.upload(client, bucket_name, file, sha256)
+                    await s3.upload(client, bucket_name, file)
 
                     
         # Cleanup
@@ -239,22 +242,25 @@ class TestUpload:
         }
         source, _ = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
-        for file in files.keys():
-            files[file] = "Suspect"
+        for file in files:
+            file.is_suspect = True
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
             # Test
-            for file in files.keys():
-                sha256: str = "Suspect"
-                await s3.upload(client, bucket_name, file, sha256)
+            for file in files:
+                file.sha256 = ""
+                await s3.upload(client, bucket_name, file)
 
         # Verify
-        for file in files.values():
-            assert(file == "Suspect")
+        for file in files:
+            assert(file.is_suspect == True)
+            assert(file.sha256 == "")
+            assert(file.is_uploaded == False)
+            assert(file.is_hashed == False)
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -272,19 +278,19 @@ class TestUpload:
         }
         source, _ = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
-        for file in files.keys():
-            os.remove(file)
+        for file in files:
+            os.remove(file.filepath)
 
         session: AioSession = get_session()
         with pytest.raises(FileNotFoundError):
             async with session.create_client('s3') as client:
                 # Test
-                for file in files.keys():
-                    sha256 = "WDE6ZSnSCMhecQYimORcJgZwMeSvGbNO37Svw9ATruo="
-                    await s3.upload(client, bucket_name, file, sha256)
+                for file in files:
+                    file.sha256 = "WDE6ZSnSCMhecQYimORcJgZwMeSvGbNO37Svw9ATruo="
+                    await s3.upload(client, bucket_name, file)
 
         # Cleanup
         teardown: dict[str, bool | str | S3Client | None] = {}
@@ -303,27 +309,27 @@ class TestUpload:
         }
         source, status_file = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
-            for file in files.keys():
-                initial_sha256: str = await s3.hash(file)
+            for file in files:
+                initial_sha256: str = await s3.hash(file.filepath)
 
-                uploaded: str = await s3.upload(client, bucket_name, file, initial_sha256)
+                uploaded: str = await s3.upload(client, bucket_name, file.filepath, initial_sha256)
                 assert (uploaded == "Uploaded")
 
                 # Modify file
                 append_bytes = b'\xC3\xA9'
-                with open(file, "ab") as f:
+                with open(file.filepath, "ab") as f:
                     f.write(append_bytes)
 
-                post_sha256: str = await s3.hash(file)
+                post_sha256: str = await s3.hash(file.filepath)
                 #log: str = f"Uploaded hash {initial_sha256} does not match local hash {post_sha256}"
 
                 # Test
-                mismatch: str = await s3.upload(client, bucket_name, file, post_sha256)
+                mismatch: str = await s3.upload(client, bucket_name, file.filepath, post_sha256)
                 
                 # Verify
                 assert(mismatch == "Mismatch")
@@ -347,19 +353,19 @@ class TestGetObjectSha:
         }
         source, _ = test_helpers.setup(fixtures)
 
-        files: dict[str, str] = s3.get_local_files(
+        files: list[s3.File] = s3.get_local_files(
             source, MAX_FILE_SIZE)
 
         session: AioSession = get_session()
         async with session.create_client('s3') as client:
 
             for file in files:
-                sha256: str = await s3.hash(file)
-                await s3.upload(client, bucket_name, file, sha256)
+                sha256: str = await s3.hash(file.filepath)
+                await s3.upload(client, bucket_name, file.filepath, sha256)
 
                 # Test
                 head_object = await s3.get_object_sha256(
-                    client, bucket_name, file)
+                    client, bucket_name, file.filepath)
 
                 # Verify
                 assert (head_object is not None)
