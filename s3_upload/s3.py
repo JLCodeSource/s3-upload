@@ -132,21 +132,22 @@ def get_local_files(path: str, max_size: int) -> list[File]:
     return file_list
 
 
-async def set_hash(files: dict[str, File], status_file: str) -> None:
-    for file, state in files.items():
-        if state.is_suspect:
-            logging.info(f"File {file} has already been hashed; skipping")
+async def set_hash(files: list[File], status_file: str) -> None:
+    for file in files:
+        if file.is_hashed:
+            logging.info(f"File {file.filepath} has already been hashed; skipping")
             continue
         try:
-            sha256: str = await hash(file)
+            sha256: str = await hash(file.filepath)
         # tag files with IO Errors with Suspect
         except OSError:
-            logging.info(f"File {file} raised OSError; tagging as Suspect & skipping")
-            files[file].is_suspect = True
+            logging.info(f"File {file.filepath} raised OSError; tagging as Suspect & skipping")
+            file.is_suspect = True
             save_status(files, status_file)
             continue
-        logging.info(f"Updating {file} key with value {sha256}")
-        files[file].sha256 = sha256
+        logging.info(f"Updating {file.filepath} key with value {sha256} & setting is_hashed to True")
+        file.sha256 = sha256
+        file.is_hashed = True
         save_status(files, status_file)
 
 
@@ -156,13 +157,13 @@ async def add_files_to_queues(
         upload_q: asyncio.Queue):
     for file in files:
         if file.is_hashed is False:
-            logging.info(f"Adding file {file} to hash queue")
+            logging.info(f"Adding file {file.filepath} to hash queue")
             await hash_q.put(file)
         elif file.is_uploaded:
-            logging.info(f"File {file} is already Uploaded")
+            logging.info(f"File {file.filepath} is already Uploaded")
             continue
         elif file.is_suspect:
-            logging.info(f"File {file} is suspect; skipping")
+            logging.info(f"File {file.filepath} is suspect; skipping")
             continue
         else:
             logging.info(f"Adding file {file} to upload queue")
