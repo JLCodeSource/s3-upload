@@ -21,6 +21,7 @@ dataclasses-json = "^0.6.3"
 pytest = "^9.0.3"
 pytest-asyncio = "^1.4.1"
 pytest-cov = "^7.1.0"
+moto = {extras = ["server"], version = "^5.0"}
 mypy = "^1.7.1"
 mypy-boto3-s3 = "^1.33.2"
 aioboto3 = "^15.0.0"
